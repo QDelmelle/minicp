@@ -22,7 +22,7 @@ public class DARPModelVH {
 
     public void main(){
         Solver cp = makeSolver();
-        instance = parseIns
+        instance =;
     }
 }
 

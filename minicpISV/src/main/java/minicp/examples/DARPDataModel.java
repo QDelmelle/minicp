@@ -1,7 +1,7 @@
 package minicp.examples;
 
 class DARPDataModel{
-    class DARPStop{
+    static class DARPStop{
         int place;
         int request;
         double x;
