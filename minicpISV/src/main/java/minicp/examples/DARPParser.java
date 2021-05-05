@@ -2,20 +2,21 @@ package minicp.examples;
 import minicp.util.io.InputReader;
 import minicp.examples.DARPDataModel.*;
 
+import java.util.ArrayList;
+
 public class DARPParser {
-    final int SCALING = 100;
-    int nRequests = 0;
-    String getNameFromFilePath(String filePath) {
-        String[] tmp = filePath.split("/");
-        String name = tmp[tmp.length-1].split("\\.")[0];
+    final static int SCALING = 100;
+    static int nRequests = 0;
+    public static String getNameFromFilePath(String filePath) {
+        String[] tmp = filePath.split("\\\\");
+        String name = tmp[tmp.length-1];
         if(name.isEmpty()) return filePath; else return name;
     }
 
-    private DARPStop lineToStop(String line) {
-        String[] splitted = line.split(" ");
-        assert(splitted.length == 7);
-        int place = Integer.parseInt(splitted[0]);
-        int load = Integer.parseInt(splitted[4]);
+    private static DARPStop lineToStop(String[] line) {
+        if (line.length != 7) System.out.println(line.length);
+        int place = Integer.parseInt(line[0]);
+        int load = Integer.parseInt(line[4]);
         int request = -1;
         if(load < 0) {
             request = place - 1 - nRequests;
@@ -26,16 +27,16 @@ public class DARPParser {
         return new DARPStop(
                 place,
                 request,
-                Double.parseDouble(splitted[1]),
-                Double.parseDouble(splitted[2]),
-                Integer.parseInt(splitted[3]) * SCALING,
+                Double.parseDouble(line[1]),
+                Double.parseDouble(line[2]),
+                Integer.parseInt(line[3]) * SCALING,
                 load,
-                Integer.parseInt(splitted[5]) * SCALING,
-                Integer.parseInt(splitted[6]) * SCALING
+                Integer.parseInt(line[5]) * SCALING,
+                Integer.parseInt(line[6]) * SCALING
         );
     }
 
-    public DARPInstance parseInstance(String filePath) {
+    public static DARPInstance parseInstance(String filePath) {
         InputReader ir = new InputReader(filePath);
         String[] header = ir.getNextLine();
         assert(header.length == 5);
@@ -46,42 +47,57 @@ public class DARPParser {
         int vCapacity = Integer.parseInt(header[3]);
         int maxRideTime = Integer.parseInt(header[4]) * SCALING; //Max time in vehicle for request (service excluded)
 
-        val startDepot: DARPStop = lineToStop(lines.next()) //start depot
+        DARPStop startDepot = lineToStop(ir.getNextLine()); //start depot
 
-        val stopLines: Array[String] = lines.filterNot(_.matches("\\s+")).toArray
-        val parsedStops: Array[DARPStop] = stopLines.map(lineToStop) //Next lines are stops /!\ last one might be end depot on some instances
+        ArrayList<DARPStop> stoplist = new ArrayList<DARPStop>();
+        String[] stopline = ir.getNextLine();
+        int nStop = 0;
+        while (stopline != null) {
+            DARPStop stop = lineToStop(stopline);
+            if (stop.load > 0) {
+                stoplist.add(stop);
+                nStop++;
+            }
+            stopline = ir.getNextLine();
+        }
+        DARPStop[] stops = new DARPStop[nStop];
+        for (int i = 0; i < nStop; i++) stops[i] = stoplist.get(i);
 
-        val stops: Array[DARPStop] = parsedStops.filter(_.load != 0)
-        val nStop: Int = stops.length
-
-        val endDepot: DARPStop = if(parsedStops.last.load == 0) parsedStops.last else startDepot //End depot
+        DARPStop endDepot = (stoplist.get(nStop-1).load == 0) ?
+                stoplist.get(nStop-1) : startDepot;
 
         // Generating stop for start end depot per vehicle
-        val depots: Array[DARPStop] = Array.fill(nVehicle)(startDepot) ++ Array.fill(nVehicle)(endDepot)
+        int nSite = nVehicle*2 + nStop;
+        DARPStop[] sites = new DARPStop[nSite];
+        int i=0;
+        for (; i<nStop; i++) { sites[i] = stops[i]; }
+        for (; i<nStop+nVehicle; i++) { sites[i] = startDepot; }
+        for (; i<nSite; i++) { sites[i] = endDepot; }
 
-                val sites: Array[DARPStop] = stops ++ depots
-        val nSite: Int = sites.length
-
-        def dist(i: Int, j: Int): Int = {
-                val x = (sites(i).x - sites(j).x) * (sites(i).x - sites(j).x)
-                val y = (sites(i).y - sites(j).y) * (sites(i).y - sites(j).y)
-                (math.sqrt(x + y) * SCALING).round.toInt
+        int[][] distances = new int[nSite][nSite];
+        for (i=0; i<nSite; i++){
+            for (int j=0; j<nSite; j++) {
+                double dx = (sites[i].x - sites[j].x) * (sites[i].x - sites[j].x);
+                double dy = (sites[i].y - sites[j].y) * (sites[i].y - sites[j].y);
+                distances[i][j] = (int) Math.round(Math.sqrt(dx + dy) * SCALING);
+            }
         }
 
-        val distances: Array[Array[Int]] = Array.tabulate(nSite, nSite)((i, j) => {
-            dist(i, j)
-        })
+        DARPVehicle[] vehicles = new DARPVehicle[nVehicle];
+        for (int v = 0; v<nVehicle; v++) {
+            vehicles[v] = new DARPVehicle(nRequests+v, nRequests+nVehicle+v, vCapacity, maxRouteDuration);
+        }
 
-        DARPInstance(
-                getNameFromFilePath(filePath),
-                Array.tabulate(nVehicle)(v => DARPVehicle(nRequests+v, nRequests+nVehicle+v, vCapacity, maxRouteDuration)),
-        Array.tabulate(nRequests)(r => DARPRequest(r, nRequests+r, maxRideTime)),
-        sites,
-                distances
-        )
+        DARPRequest[] requests = new DARPRequest[nRequests];
+        for (int r = 0; r<nRequests; r++) {
+            requests[r] = new DARPRequest(r, nRequests+r, maxRideTime);
+        }
+
+        return new DARPInstance(getNameFromFilePath(filePath),
+                vehicles, requests, sites, distances);
     }
 }
-}
+
 
 
 

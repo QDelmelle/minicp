@@ -1,10 +1,27 @@
 package minicp.examples;
 
+import minicp.engine.constraints.Equal;
+import minicp.engine.constraints.LessOrEqual;
+import minicp.engine.core.BoolVar;
+import minicp.engine.core.IntVar;
+import minicp.engine.core.IntVarViewOffset;
 import minicp.engine.core.Solver;
 
-import static minicp.cp.Factory.makeSolver;
 import minicp.examples.DARPParser.*;
 import minicp.examples.DARPDataModel.*;
+import minicp.search.DFSearch;
+import minicp.search.SearchStatistics;
+import minicp.state.CopyBool;
+import minicp.state.CopyInt;
+import minicp.state.StateBool;
+import minicp.state.StateInt;
+import minicp.util.Procedure;
+import minicp.util.exception.InconsistencyException;
+
+import java.util.*;
+
+import static minicp.cp.Factory.*;
+import static minicp.cp.BranchingScheme.*;
 
 /**
  * @author Quentin Delmelle qdelmelle@gmail.com
@@ -13,42 +30,65 @@ import minicp.examples.DARPDataModel.*;
  * and Charles Thomas cftmthomas@gmail.com
  */
 
-public class DARPModelVH {
-    DARPInstance instance;
-    int searchTime;
+class DARPModelVH {
+    static DARPInstance instance;
+    static Solver cp;
+    static DFSearch search;
+
+    // meta-parameters
+    static int searchTime;
+    static int gamma = 200;
+    static int tau = 1000;
+    static int maxSize;
+    static int range = 4;
+    static int numIter = 300;
+    static double d = 0.07;
+    static int maxTime = 300;
+    static long remainTime = maxTime * 1000L;
+
 //    solPath: Option[String],
 //    logPath: Option[String],
-    boolean firstSolOnly = true;
 
-    public void main(){
-        Solver cp = makeSolver();
-        instance =;
-    }
-}
+    // utility parameters
+    static boolean firstSolOnly = true;
+    boolean silent = true;
 
-    solver.silent = true
+    // solution stats
+    static DarpSol bestSolution = null;
+    static int bestSolutionObjective = Integer.MAX_VALUE;
+    static DarpSol currentSolution = null;
+    static int currentSolutionObjective = Integer.MAX_VALUE;
+    static int totalNumFails = 0;
+    static boolean constraintsPosted = false;
 
-    var bestSolutionObjective = Int.MaxValue
-    var bestSolution: Option[DarpSol] = None
-    var currentSolution: Option[DarpSol] = None
-    var currentSolutionObjective = Int.MaxValue
-    var totalNumFails = 0
-    var constraintsPosted: Boolean = false
-
-    println(firstSolOnly)
-
-
-    /* Data */
+    // Data
 
     // Parameters of the problem
-    val numVars = instance.nSites
-    val numRequests = instance.nRequests
-    val vehicleCapacity = instance.vehicles.head.capacity
-    val numVehicles = instance.nVehicles
-    val maxRideTime = instance.requests.head.maxRideTime
-    val timeHorizon = instance.sites.map(_.winEnd).max
+    static int numVars;
+    static int numRequests;
+    static int vehicleCapacity;
+    static int numVehicles;
+    static int maxRideTime;
+    static int timeHorizon = 0;
+
+    // Variables necessary for posting constraints
+    static int[][] travelTimeMatrix;
+    static int[] vertexLoadChange;
+    static int[] timeWindowStarts;
+    static int[] timeWindowEnds;
+
+    // Variables and structures related to modelling
+    static IntVar[] servingTime;
+    static IntVar[] servingVehicle;
+    static StateInt[] succ;
+    static StateInt[] pred;
+    static StateInt[] capacityLeftInRoute;
+    static int[] servingDuration;
+    static HashMap<Integer, HashMap<Integer, HashMap<Integer, Integer>>>[] insertionObjChange;
+    static StateBool[] customersLeft;
 
     // Ranges
+    /*
     val numVarsRange = 0 until numVars
     val numRequestsRange = 0 until numRequests
     val beginDepotRange = 2 * numRequests until numVars - numVehicles
@@ -57,374 +97,467 @@ public class DARPModelVH {
     val customerVertexRange = 0 until 2 * numRequests
     val succRange = 0 until numVars - numVehicles
     val predRange = customerVertexRange ++ endDepotRange
+    */
 
-    // Variables necessary for posting constraints
-    val travelTimeMatrix = instance.distances
-    val vertexLoadChange = instance.sites.map(_.load)
-    val timeWindowStarts = instance.sites.map(_.winStart)
-    val timeWindowEnds = instance.sites.map(_.winEnd)
+    public static void main(String[] args) {
+        cp = makeSolver();
+        instance = DARPParser.parseInstance("C:\\Users\\Utilisateur\\Documents\\UNIF2020\\TFE\\DARP RK\\DARP\\Cordeau\\a2-16.txt");
+        System.out.println("firstSolOnly= "+firstSolOnly);
 
-    // Variables related to modelling
-    var servingTime: Array[CPIntVar] = new Array[CPIntVar](numVars)
-    val servingVehicle: Array[CPIntVar] = new Array[CPIntVar](numVars)
-    val succ: Array[ReversibleInt] = new Array[ReversibleInt](numVars)
-    val pred: Array[ReversibleInt] = new Array[ReversibleInt](numVars)
+        // Data
 
-    val capacityLeftInRoute: Array[ReversibleInt] = Array.tabulate(numVars)(_ => new ReversibleInt(solver, vehicleCapacity))
-    val servingDuration = instance.sites.map(_.service)
+        // Parameters of the problem
+        numVars = instance.nSites;
+        numRequests = instance.nRequests;
+        vehicleCapacity = instance.vehicles[0].capacity;
+        numVehicles = instance.nVehicles;
+        maxRideTime = instance.requests[0].maxRideTime;
+        for (DARPStop site : instance.sites) timeHorizon = Math.max(timeHorizon, site.winEnd);
+        maxSize = numRequests/2;
 
-    val insertionObjChange: Array[scala.collection.mutable.HashMap[Int, scala.collection.mutable.HashMap[Int, scala.collection.mutable.HashMap[Int, Int]]]] = new Array[scala.collection.mutable.HashMap[Int, scala.collection.mutable.HashMap[Int, scala.collection.mutable.HashMap[Int, Int]]]](numRequests)
-    val customersLeft: ReversibleSet = new ReversibleSet(solver)
+        // Variables necessary for posting constraints
+        travelTimeMatrix = instance.distances;
+        vertexLoadChange = new int[instance.nSites];
+        for (int i=0;i<numVars;i++) vertexLoadChange[i] = instance.sites[i].load;
+        timeWindowStarts = new int[instance.nSites];
+        for (int i=0;i<numVars;i++) timeWindowStarts[i] = instance.sites[i].winStart;
+        timeWindowEnds = new int[instance.nSites];
+        for (int i=0;i<numVars;i++) timeWindowEnds[i] = instance.sites[i].winEnd;
 
-    def initCpVars(): Unit = {
-        for (i <- numVarsRange) {
-            if (customerVertexRange.contains(i)) {
-                succ(i) = new ReversibleInt(solver, i, numVars)
-                pred(i) = new ReversibleInt(solver, i, numVars)
-                servingVehicle(i) = CPIntVar(0, numVehicles)
+        // Variables and structures related to modelling
+        servingTime = new IntVar[numVars];
+        servingVehicle = makeIntVarArray(cp, numVars, 0, numVehicles);
+        succ = new CopyInt[numVars];
+        pred = new CopyInt[numVars];
+        capacityLeftInRoute = new CopyInt[numVars];
+        for (int i=0;i<numVars;i++) capacityLeftInRoute[i].setValue(vehicleCapacity);
+        servingDuration = new int[numVars];
+        for (int i=0;i<numVars;i++) servingDuration[i] = instance.sites[i].service;
+        insertionObjChange = new HashMap[numVars];
+        customersLeft = new StateBool[numRequests];
+        for (int i=0;i<numRequests;i++) customersLeft[i] = new CopyBool(false);
+
+        //Start solving the problem
+        // initialise variables
+        initCpVars();
+        //Add request to set of unassigned request "customersLeft"
+        for (int i=0;i<numRequests;i++) {
+            customersLeft[i].setValue(true);
+        }
+
+        // post constraints
+        postConstraints();
+        postUnaryConstraint();
+        postCumulativeConstraint();
+
+        // On solution
+        /*
+        search = makeDfs(cp, () -> {
+            boolean CL = false;
+            for (StateBool C : customersLeft) if (C.value()) CL = true;
+            if (!CL) {
+                return EMPTY;
             } else {
-                if (beginDepotRange.contains(i)) {
-                    succ(i) = new ReversibleInt(solver, getEndDepot(getVehicleOfDepot(i)))
-                    pred(i) = new ReversibleInt(solver, succ(i).value)
-                    servingVehicle(i) = CPIntVar(getVehicleOfDepot(i))
-                } else {
-                    succ(i) = new ReversibleInt(solver, getBeginDepot(getVehicleOfDepot(i)))
-                    pred(i) = new ReversibleInt(solver, succ(i).value)
-                    servingVehicle(i) = CPIntVar(getVehicleOfDepot(i))
+                int request = getUnassignedRequest();
+                int[][] points = getInsertionPoints(request);
+                Procedure[] branches = new Procedure[points.length];
+                for (int i=0;i<points.length;i++) {
+                    int[] p = points[i];
+                    branches[i] = () -> branchRequestPoint(request, (p[1], p[2], p[3], p[4]);
+                }
+                return branch(branches);
+            }
+        });
+
+        search.onSolution(() -> {
+            System.out.println("Total route cost: " + getDistanceObjective()/100.0);
+            System.out.println("best solution found:= " + bestSolutionObjective/100.0);
+            System.out.println("remainingTime := "+remainTime);
+            int[] succP = new int[numVars];
+            Arrays.setAll(succP, (i) -> succ[i].value());
+            int[] predP = new int[numVars];
+            Arrays.setAll(predP, (i) -> pred[i].value());
+            int[] servingVP = new int[numVars];
+            Arrays.setAll(servingVP, (i) -> servingVehicle[i].min());
+            double[] minServingTime = new double[numVars];
+            Arrays.setAll(minServingTime, (i) -> servingTime[i].min()/100);
+            double[] maxServingTime = new double[numVars];
+            Arrays.setAll(maxServingTime, (i) -> servingTime[i].max()/100);
+//    println("maxRideTime: " + maxRideTime/100.0)
+//    println("serving times:")
+//    println(numVarsRange.map(i => i + " (" + minServintgTime(i) + ":" + maxServintgTime(i) + ")").mkString("\n"))
+            double rand = Math.random();
+            if (getDistanceObjective() < currentSolutionObjective || rand < d) {
+                currentSolution = new DarpSol(succP, predP, servingVP, getDistanceObjective()/100.0, minServingTime, maxServingTime);
+                currentSolutionObjective = getDistanceObjective();
+                if (currentSolutionObjective < bestSolutionObjective) {
+                    bestSolution = new DarpSol(succP, predP, servingVP, getDistanceObjective()/100.0, minServingTime, maxServingTime);
+                    bestSolutionObjective = currentSolutionObjective;
                 }
             }
-            servingTime(i) = CPIntVar(timeWindowStarts(i), timeWindowEnds(i))
+            System.out.println("-------------------------");
+        });
+        */
+        boolean solFound = false;
+
+//  println(start(nSols = Int.MaxValue, failureLimit = Int.MaxValue, timeLimit = (remainTime/1000.0).round.toInt))
+
+        while(!solFound && remainTime > 0){
+            SearchStatistics stats = search.solve();
+                    //(1, Math.max(gamma * numVehicles, tau), (int)Math.round(remainTime / 1000.0)); ??
+            if(stats.numberOfSolutions() == 1) solFound = true;
+            System.out.println(stats);
+            //remainTime -= (int)Math.round(stats.time/1000.0); ?? no time in stats?
+        }
+
+        if(!firstSolOnly) lns();
+
+        // write sol in a file
+        //  val pw = new PrintWriter(new File("data/DARP/Cordeau2003/" + name + "Solution.txt"))
+        //  pw.write(name + " " + bestSolutionObjective/100.0 +"\n")
+        //  for(i <- numVarsRange){
+        //    pw.write(bestSolution.get.succ(i) + " ")
+        //    pw.write(bestSolution.get.pred(i) + " ")
+        //    pw.write(bestSolution.get.minServingTime(i) + " ")
+        //    pw.write(bestSolution.get.maxServingTime(i) + " ")
+        //    pw.write(bestSolution.get.servingVehicle(i)+"\n")
+        //  }
+        //  pw.close
+    }
+
+    // helper methods
+    static int getVehicleOfDepot(int i) {
+        if (isBeginDepot(i))
+            return i - 2 * numRequests;
+        else return i - (2 * numRequests + numVehicles);
+    }
+
+    static int getBeginDepot(int i) { return  2 * numRequests + i; }
+
+    static int getEndDepot(int i) { return numVars - numVehicles + i; }
+
+    static boolean isBeginDepot(int i) { return (i >= 2 * numRequests && i < numVars - numVehicles); }
+
+    boolean isEndDepot(int i) { return i >= numVars - numVehicles && i < numVars; }
+
+    static IntVar getArrivalTime(int vertex, int successor) {
+        int dist = travelTimeMatrix[vertex][successor];
+        if (isBeginDepot(vertex)) return new IntVarViewOffset(servingTime[vertex], dist);
+        else return new IntVarViewOffset(servingTime[vertex], servingDuration[vertex] + dist);
+    }
+
+    static int getCorrespondingRequest(int i) { return (i < numRequests) ? i : i - numRequests; }
+
+    int getCorrespondingPickup(int i) { return i - numRequests; }
+
+    int getCorrespondingDelivery(int i) { return i + numRequests; }
+
+    int getCriticalVertex(int request) {
+        return (timeWindowStarts[request] > 0 || timeWindowEnds[request] < timeHorizon) ?
+                request : request + numRequests; }
+
+    int getCorrespondingVertex(int i) { return (isPickup(i)) ?
+            getCorrespondingDelivery(i) : getCorrespondingPickup(i); }
+
+    boolean isPickup(int i) { return i < numRequests; }
+
+    boolean isDelivery(int i) { return i >= numRequests && i < 2 * numRequests; }
+
+    boolean isCustomerVertex(int i) { return i < 2 * numRequests; }
+
+    boolean isCriticalVertex(int vertex) {
+        return timeWindowStarts[vertex] > 0 || timeWindowEnds[vertex] < timeHorizon;
+    }
+
+    int getArrivalTimeValue(int vertex, int successor, boolean getMin) {
+        if (isBeginDepot(vertex)) {
+            if (getMin) return servingTime[vertex].min() + travelTimeMatrix[vertex][successor];
+            else return servingTime[vertex].max() + travelTimeMatrix[vertex][successor];
+        }
+        if (getMin) return servingTime[vertex].min() + servingDuration[vertex] + travelTimeMatrix[vertex][successor];
+        else return servingTime[vertex].max() + servingDuration[vertex] + travelTimeMatrix[vertex][successor];
+    }
+
+    // variables && constraints initialization
+
+    static void initCpVars() {
+        for (int i=0;i<numVars;i++) {
+            if (i<2*numRequests) { // i is a site
+                succ[i] = new CopyInt(i);
+                pred[i] = new CopyInt(i);
+            } else {
+                if (isBeginDepot(i)) { // i is a start depot
+                    succ[i] = new CopyInt(getEndDepot(getVehicleOfDepot(i)));
+                    pred[i] = new CopyInt(succ[i].value());
+                    servingVehicle[i].assign(getVehicleOfDepot(i));
+                } else { // i is an end depot
+                    succ[i] = new CopyInt(getBeginDepot(getVehicleOfDepot(i)));
+                    pred[i] = new CopyInt(succ[i].value());
+                    servingVehicle[i].assign(getVehicleOfDepot(i));
+                }
+            }
+            servingTime[i] = makeIntVar(cp, timeWindowStarts[i], timeWindowEnds[i]);
         }
     }
 
-    def postPrecedence(): Unit = {
-        for (i <- numRequestsRange) {
-            add(servingTime(i) <= (servingTime(numRequests + i) - travelTimeMatrix(i)(i + numRequests) - servingDuration(i)))
+    static void postPrecedence() {
+        for (int i=0;i<numRequests;i++) {
+            cp.post(lessOrEqual(servingTime[i], minus(servingTime[numRequests + i],
+                    travelTimeMatrix[i][i + numRequests] + servingDuration[i])));
         }
-        for (i <- numVehiclesRange) {
-            add(servingTime(getEndDepot(i)) - servingTime(getBeginDepot(i)) <= timeHorizon)
-        }
-    }
-
-    def postRideTime(): Unit = {
-        for (i <- numRequestsRange) {
-            add(servingTime(numRequests + i) - (servingTime(i) + servingDuration(i)) <= maxRideTime)
+        for (int i=0;i<numVehicles;i++) {
+            cp.post(lessOrEqual(servingTime[getEndDepot(i)],
+                    plus(servingTime[getBeginDepot(i)], timeHorizon)));
         }
     }
 
+    static void postRideTime() {
+        for (int i=0;i<numRequests;i++) {
+            cp.post(lessOrEqual(servingTime[numRequests + i],
+                    plus(servingTime[i], servingDuration[i] + maxRideTime)));
+        }
+    }
 
-    def postConstraints(): Unit = {
+    static void postConstraints() {
         if (constraintsPosted) {
-            return
+            return;
         }
-        constraintsPosted = true
-        for (i <- numRequestsRange) {
-            add(servingVehicle(i) === servingVehicle(i + numRequests))
+        constraintsPosted = true;
+        for (int i=0;i<numRequests;i++) {
+            cp.post(equal(servingVehicle[i], servingVehicle[i + numRequests]));
         }
-        postPrecedence()
-        postRideTime()
+        postPrecedence();
+        postRideTime();
     }
 
-    def postCumulativeConstraint(): Unit = {
+    static void postCumulativeConstraint() {
+        /* ???
         val travelStart: Array[CPIntVar] = Array.tabulate(numRequests)(i => servingTime(i))
         val travelEnd: Array[CPIntVar] = Array.tabulate(numRequests)(i => servingTime(i+numRequests))
         val travelDuration: Array[CPIntVar] = Array.tabulate(numRequests)(i => travelEnd(i) - travelStart(i))
         val travelLoad = Array.tabulate(numRequests)(i => CPIntVar(vertexLoadChange(i)))
         val travelVehicle = Array.tabulate(numRequests)(i => servingVehicle(i))
-        for(i <- numRequestsRange) add(travelDuration(i) > 0)
-        for(v <- numVehiclesRange){
+        for(int i=0;i<numRequests;i++) add(travelDuration(i) > 0)
+        for(int v=0;v<numVehicles;v++) {
             //Adding cumulative constraint:
             val capVar = CPIntVar(vehicleCapacity)
-            add(maxCumulativeResource(travelStart, travelDuration, travelEnd, travelLoad, travelVehicle, capVar, v))
+            add(maxCumulativeResource(travelStart, travelDuration, travelEnd,
+                    travelLoad, travelVehicle, capVar, v))
         }
+        */
     }
 
-    def postUnaryConstraint(): Unit = {
+    static void postUnaryConstraint() {
+        /* ???
         val start: Array[CPIntVar] = Array.tabulate(2*numRequests)(i => servingTime(i))
         val duration: Array[CPIntVar] = Array.tabulate(2*numRequests)(i => CPIntVar(servingDuration(i)))
         val end: Array[CPIntVar] = Array.tabulate(2*numRequests)(i => start(i) + duration(i))
 
         val resource = Array.tabulate(2*numRequests)(i => servingVehicle(i))
-        for(v <- numVehiclesRange){
+        for(int v=0;v<numVehicles;v++){
             //Adding unary constraint:
             add(unaryResource(start, duration, end, resource, v))
         }
-    }
-
-
-
-    // parameters
-    val gamma = 200
-    val tau = 1000
-    val maxSize = numRequests / 2
-    val range = 4
-    val numIter = 300
-    val d = 0.07.toFloat
-    val maxTime = 300
-    var remainTime = maxTime * 1000L
-
-
-    /**
-     * Start Solve the problem
-     */
-    // initialise variable
-    initCpVars()
-
-    //Add request to set of unassigned request "customersLeft"
-  for (i <- numRequestsRange) {
-        customersLeft.add(i)
-    }
-
-    // post constraints
-    postConstraints()
-    //postUnaryConstraint()
-    //postCumulativeConstraint()
-
-    // On solution
-    onSolution {
-        println("Total route cost: " + getDistanceObjective/100.0)
-        println("best solution found:= " + bestSolutionObjective/100.0)
-        println("remainingTime := "+remainTime)
-        val succP = Array.tabulate(numVars)(i => succ(i).value)
-        val predP = Array.tabulate(numVars)(i => pred(i).value)
-        val servingVP = Array.tabulate(numVars)(i => servingVehicle(i).value)
-        val minServintgTime = Array.tabulate(numVars)(i => servingTime(i).min/100.0)
-        val maxServintgTime = Array.tabulate(numVars)(i => servingTime(i).max/100.0)
-//    println("maxRideTime: " + maxRideTime/100.0)
-//    println("serving times:")
-//    println(numVarsRange.map(i => i + " (" + minServintgTime(i) + ":" + maxServintgTime(i) + ")").mkString("\n"))
-        val rand = scala.util.Random.nextFloat()
-        if (getDistanceObjective < currentSolutionObjective || rand < d) {
-            currentSolution = Some(new DarpSol(succP, predP, servingVP, getDistanceObjective/100.0, minServintgTime, maxServintgTime))
-            currentSolutionObjective = getDistanceObjective
-            if (currentSolutionObjective < bestSolutionObjective) {
-                bestSolution = Some(new DarpSol(succP, predP, servingVP, getDistanceObjective/100.0, minServintgTime, maxServintgTime))
-                bestSolutionObjective = currentSolutionObjective
-            }
-        }
-        println("-------------------------")
-    }
-
-    def relax(nRelax: Int): Unit = {
-        val relaxedCustomers = selectRelaxedCustomers(currentSolution.get, nRelax)
-        val solSucc = Array.tabulate(numVars)(i => currentSolution.get.succ(i))
-        val solServingVehicle = Array.tabulate(numVars)(i => currentSolution.get.servingVehicle(i))
-        clearCustomerLeft()
-        for (r <- relaxedCustomers) {
-            succ(r).setValue(r)
-            pred(r).setValue(r)
-            succ(r + numRequests).setValue(r + numRequests)
-            pred(r + numRequests).setValue(r + numRequests)
-            customersLeft.add(r)
-        }
-        for (v <- numVehiclesRange) {
-            val begin = getBeginDepot(v)
-            val end = getEndDepot(v)
-            var current = begin
-            var prev = -1
-            while (current != end) {
-                val currentRequest = getCorrespondingRequest(current)
-                if(!relaxedCustomers.contains(currentRequest)){
-                    if(prev != -1){
-                        succ(prev).setValue(current)
-                        pred(current).setValue(prev)
-                        add(getArrivalTime(prev, current) <= servingTime(current))
-                        add(servingVehicle(current) === solServingVehicle(current))
-                    }
-                    prev = current
-                }
-                current = solSucc(current)
-            }
-            if(prev != -1){
-                succ(prev).setValue(end)
-                pred(end).setValue(prev)
-                add(getArrivalTime(prev, end) <= servingTime(end))
-            }
-            updateCapacityLeftInRoute(v, -1)
-        }
+        */
     }
 
     // lns
-    def lns(): Unit = {
-        var i = 2
+    static void lns() {
+        int i = 2;
         while(remainTime > 0 && i <= maxSize - range) {
-            var j = 0
+            int j = 0;
             while(remainTime > 0 && j <= range) {
-                var k = 1
+                int k = 1;
                 while(remainTime > 0 && k <= numIter) {
-                    val stats = startSubjectTo(1, Int.MaxValue, (remainTime/1000.0).round.toInt){
-                        relax(i + j)
+                    int finalI = i;
+                    int finalJ = j;
+                    SearchStatistics stats = search.solveSubjectTo(
+                            statistics -> statistics.numberOfSolutions() == 1,
+                            () -> {
+                                relax(finalI + finalJ);
+                            });
+
+                    //val stats = startSubjectTo(1, Int.MaxValue, (remainTime/1000.0).round.toInt){ relax(i + j) }
+                    k++;
+                    //remainTime -= stats.time // stats have no time??
+                    totalNumFails += stats.numberOfFailures();
+                    System.out.println(stats);
+                }
+                j++;
+            }
+            i++;
+        }
+    }
+
+    void relax(int nRelax) {
+        Set<Integer> relaxedCustomers = selectRelaxedCustomers(currentSolution, nRelax);
+        int[] solSucc = new int[numVars];
+        Arrays.setAll(solSucc, i -> currentSolution.succ[i]);
+        int[] solServingVehicle = new int[numVars];
+        Arrays.setAll(solServingVehicle, i -> currentSolution.servingVehicle[i]);
+        clearCustomerLeft();
+        for (int r : relaxedCustomers) {
+            succ[r].setValue(r);
+            pred[r].setValue(r);
+            succ[r + numRequests].setValue(r + numRequests);
+            pred[r + numRequests].setValue(r + numRequests);
+            customersLeft[r].setValue(true);
+        }
+        for (int v=0;v<numVehicles;v++) {
+            int begin = getBeginDepot(v);
+            int end = getEndDepot(v);
+            int current = begin;
+            int prev = -1;
+            while (current != end) {
+                int currentRequest = getCorrespondingRequest(current);
+                if(!relaxedCustomers.contains(currentRequest)){
+                    if(prev != -1){
+                        succ[prev].setValue(current);
+                        pred[current].setValue(prev);
+                        lessOrEqual(getArrivalTime(prev, current), servingTime[current]);
+                        equal(servingVehicle[current], solServingVehicle[current]);
                     }
-                    k += 1
-                    remainTime -= stats.time
-                    totalNumFails += stats.nFails
-                    println(stats)
+                    prev = current;
                 }
-                j += 1
+                current = solSucc[current];
             }
-            i += 1
+            if(prev != -1){
+                succ[prev].setValue(end);
+                pred[end].setValue(prev);
+                lessOrEqual(getArrivalTime(prev, end), servingTime[end]);
+            }
+            updateCapacityLeftInRoute(v, -1);
         }
     }
 
-    var solFound = false
-
-    search {
-        if (customersLeft.isEmpty) {
-            noAlternative
-        } else {
-            val request = getUnassignedRequest
-            val point= getInsertionPoints(request)
-            branchAll(point)(p => branchRequestPoint(request, (p._1, p._2, p._3, p._4)))
-        }
-    }
-
-//  println(start(nSols = Int.MaxValue, failureLimit = Int.MaxValue, timeLimit = (remainTime/1000.0).round.toInt))
-
-  while(!solFound && remainTime > 0){
-        val stats = start(1, Math.max(gamma * numVehicles, tau), (remainTime/1000.0).round.toInt)
-        if(stats.nSols == 1) solFound = true
-        println(stats)
-        remainTime -= (stats.time/1000.0).round.toInt
-    }
-
-  if(!firstSolOnly) lns()
-
-//  val pw = new PrintWriter(new File("data/DARP/Cordeau2003/" + name + "Solution.txt"))
-//  pw.write(name + " " + bestSolutionObjective/100.0 +"\n")
-//  for(i <- numVarsRange){
-//    pw.write(bestSolution.get.succ(i) + " ")
-//    pw.write(bestSolution.get.pred(i) + " ")
-//    pw.write(bestSolution.get.minServingTime(i) + " ")
-//    pw.write(bestSolution.get.maxServingTime(i) + " ")
-//    pw.write(bestSolution.get.servingVehicle(i)+"\n")
-//  }
-//  pw.close
-
-
-    //-----------------------------------------
-
-
-    def getUnassignedMinVehicleMinInsertionPointsRequest: Int = {
-        var minChoices = Int.MaxValue
-        var minVehicles = numVehicles + 1
-        val bQueueBuffer: ArrayBuffer[BranchingChoice] = ArrayBuffer[BranchingChoice]()
-        val bestChange = Int.MinValue
-        for (i <- customersLeft) {
-            val tempChange = Int.MinValue
-            val numChoices: Mut[Int] = new Mut[Int](0)
-            val branchingQueue: scala.collection.mutable.Queue[BranchingChoice] = getInsertionCost(i, numChoices)
-            if (servingVehicle(i).size < minVehicles) {
-                minVehicles = servingVehicle(i).size
-                bQueueBuffer.clear()
-                for (j <- branchingQueue) {
-                    bQueueBuffer += j
+    int getUnassignedMinVehicleMinInsertionPointsRequest() {
+        int minChoices = Integer.MAX_VALUE;
+        int minVehicles = numVehicles + 1;
+        List<BranchingChoice> bQueueBuffer = new ArrayList<BranchingChoice>();
+        int bestChange = Integer.MIN_VALUE;
+        for (int i=0 ; i<numRequests; i++) {
+            if (!customersLeft[i].value()) continue;
+            int tempChange = Integer.MIN_VALUE;
+            Mut numChoices = new Mut(0);
+            Queue<BranchingChoice> branchingQueue = getInsertionCost(i, numChoices);
+            if (servingVehicle[i].size() < minVehicles) {
+                minVehicles = servingVehicle[i].size();
+                bQueueBuffer.clear();
+                for (BranchingChoice j : branchingQueue) {
+                    bQueueBuffer.add(j);
                 }
             }
-            else if (servingVehicle(i).size == minVehicles && numChoices.value < minChoices) {
-                minChoices = numChoices.value
-                bQueueBuffer.clear()
-                for (j <- branchingQueue) {
-                    bQueueBuffer += j
+            else if (servingVehicle[i].size() == minVehicles && numChoices.value < minChoices) {
+                minChoices = numChoices.value;
+                bQueueBuffer.clear();
+                for (BranchingChoice j : branchingQueue) {
+                    bQueueBuffer.add(j);
                 }
             }
-            else if (servingVehicle(i).size == minVehicles && numChoices.value == minChoices && tempChange >= bestChange) {
-                for (j <- branchingQueue) {
-                    bQueueBuffer += j
+            else if (servingVehicle[i].size() == minVehicles && numChoices.value == minChoices && tempChange >= bestChange) {
+                for (BranchingChoice j : branchingQueue) {
+                    bQueueBuffer.add(j);
                 }
             }
         }
-        val bQueue: Array[BranchingChoice] = bQueueBuffer.toArray
-        val currentRequest = bQueue(scala.util.Random.nextInt(bQueue.length)).request
-        val bc: BranchingChoice = getBestBranchingDecision(currentRequest)
-        bc.request
+        BranchingChoice[] bQueue = bQueueBuffer.toArray(new BranchingChoice[0]);
+        Random rn = new Random();
+        int currentRequest = bQueue[rn.nextInt(bQueue.length)].request;
+        BranchingChoice bc = getBestBranchingDecision(currentRequest);
+        return bc.request;
     }
 
-
-    def getUnassignedRequest: Int = {
-        for (i <- customersLeft) {
-            insertionObjChange(i) = new scala.collection.mutable.HashMap[Int, scala.collection.mutable.HashMap[Int, scala.collection.mutable.HashMap[Int, Int]]]()
-            for (v <- numVehiclesRange) {
-                setInsertionCost(i, v)
+    int getUnassignedRequest() {
+        for (int i=0 ; i<numRequests; i++) {
+            if (!customersLeft[i].value()) continue;
+            insertionObjChange[i] = new HashMap<Integer, HashMap<Integer, HashMap<Integer, Integer>>>();
+            for (int v=0;v<numVehicles;v++) {
+                setInsertionCost(i, v);
             }
         }
-        getUnassignedMinVehicleMinInsertionPointsRequest
+        return getUnassignedMinVehicleMinInsertionPointsRequest();
     }
 
-    def getInsertionPoints(request: Int): Array[(Int, Int, Int, Int)] = {
-        val vehiclePointsChangeBuffer: ArrayBuffer[(Int, Int, Int, Int)] = ArrayBuffer[(Int, Int, Int, Int)]()
-        for (v <- insertionObjChange(request).keys) {
-            for (cv <- insertionObjChange(request)(v).keys) {
-                for (ncv <- insertionObjChange(request)(v)(cv).keys) {
-                    vehiclePointsChangeBuffer += ((v, cv, ncv, insertionObjChange(request)(v)(cv)(ncv)))
+    int[][] getInsertionPoints(int request) {
+        List<int[]> vehiclePointsChangeBuffer = new ArrayList<int[]>();
+        for (int v : insertionObjChange[request].keySet()) {
+            for (int cv : insertionObjChange[request].get(v).keySet()) {
+                for (int ncv : insertionObjChange[request].get(v).get(cv).keySet()) {
+                    vehiclePointsChangeBuffer.add(new int[]
+                            {v, cv, ncv, insertionObjChange[request].get(v).get(cv).get(ncv)});
                 }
             }
         }
-        val vehiclePointsChange: Array[(Int, Int, Int, Int)] = vehiclePointsChangeBuffer.toArray.sortBy(-_._4)
-        vehiclePointsChange
+        int[][] vehiclePointsChange = vehiclePointsChangeBuffer.toArray(new int[0][0]);
+        Arrays.sort(vehiclePointsChange, new Comparator<int[]>() {
+            @Override
+            public int compare(int[] a, int[] b) {
+                return a[3]-b[3];
+            }
+        });
+        return vehiclePointsChange;
     }
 
-    def branchRequestPoint(request: Int, point: (Int, Int, Int, Int)): Unit = {
-        val (vehicle, cvSucc, ncvSucc, change): (Int, Int, Int, Int) = point
-        val cvv = getCriticalVertex(request)
-        val ncv = getCorrespondingVertex(cvv)
+    void branchRequestPoint(int request, int[] point) {
+        int vehicle = point[0], cvSucc = point[1], ncvSucc = point[2], change = point[3];
+        int cvv = getCriticalVertex(request);
+        int ncv = getCorrespondingVertex(cvv);
 
-
-        if (!tryPost(servingVehicle(request) === servingVehicle(cvSucc))) {
-            throw Inconsistency
+        if (!tryPost(new Equal(servingVehicle[request], servingVehicle[cvSucc]))) {
+            throw new InconsistencyException();
         }
         if (!insertVertexIntoRoute(cvv, cvSucc)) {
-            throw Inconsistency
+            throw new InconsistencyException();
         }
         if (!insertVertexIntoRoute(ncv, ncvSucc)) {
-            throw Inconsistency
+            throw new InconsistencyException();
         }
-        updateCapacityLeftInRoute(servingVehicle(request).value, request)
+        updateCapacityLeftInRoute(servingVehicle[request].min(), request);
         if (!isPositive(capacityLeftInRoute)) {
-            throw Inconsistency
+            throw new InconsistencyException();
         }
-        customersLeft.remove(request)
-        val v = servingVehicle(cvSucc).value
-        for (i <- customersLeft) {
-            if (insertionObjChange(i).contains(v)) {
-                insertionObjChange(i).remove(v)
+        customersLeft[request].setValue(false);
+        int v = servingVehicle[cvSucc].min();
+        for (int i=0 ; i<numRequests; i++) {
+            if (!customersLeft[i].value()) continue;
+            if (insertionObjChange[i].containsKey(v)) {
+                insertionObjChange[i].remove(v);
             }
-            setInsertionCost(i, v)
-            val insertionPoint = getInsertionPoints(i)
-            if(insertionPoint.isEmpty){
-                throw Inconsistency
+            setInsertionCost(i, v);
+            int[][] insertionPoint = getInsertionPoints(i);
+            if(insertionPoint.length == 0){
+                throw new InconsistencyException();
             }
         }
-
     }
 
-
-
-
-    def updateCapacityLeftInRoute(v: Int, start: Int): Unit = {
-        val begin = getBeginDepot(v)
-        val end = getEndDepot(v)
-        var star = start
+    void updateCapacityLeftInRoute(int v, int start) {
+        int begin = getBeginDepot(v);
+        int end = getEndDepot(v);
+        int star = start;
         if (star == -1) {
-            star = succ(begin).value
+            star = succ[begin].value();
         }
-        var capacity = capacityLeftInRoute(pred(star).value).value
+        int capacity = capacityLeftInRoute[pred[star].value()].value();
         while (star != end) {
-            capacity -= vertexLoadChange(star)
-            capacityLeftInRoute(star).setValue(capacity)
-            star = succ(star).value
+            capacity -= vertexLoadChange[star];
+            capacityLeftInRoute[star].setValue(capacity);
+            star = succ[star].value();
         }
     }
 
-    def insertVertexIntoRoute(i: Int, j: Int): Boolean = {
-        if (!tryPost(getArrivalTime(i, j) <= servingTime(j)) || !tryPost(getArrivalTime(pred(j).value, i) <= servingTime(i))) return false
-        succ(i).setValue(j)
-        pred(i).setValue(pred(j).value)
-        succ(pred(i).value).setValue(i)
-        pred(j).setValue(i)
-        true
+    boolean insertVertexIntoRoute(int i, int j) {
+        if (!tryPost(new LessOrEqual(getArrivalTime(i, j), servingTime[j])) ||
+                !tryPost(new LessOrEqual(getArrivalTime(pred[j].value(), i), servingTime[i])))
+            return false;
+        succ[i].setValue(j);
+        pred[i].setValue(pred[j].value());
+        succ[pred[i].value()].setValue(i);
+        pred[j].setValue(i);
+        return true;
     }
 
-    def getBestBranchingDecision(request: Int): BranchingChoice = {
+    BranchingChoice getBestBranchingDecision(int request) {
         var branchingQueue: ArrayBuffer[BranchingChoice] = ArrayBuffer[BranchingChoice]()
         val cvv = getCriticalVertex(request)
         val ncv = getCorrespondingVertex(cvv)
@@ -452,6 +585,17 @@ public class DARPModelVH {
         val branchingQ: Array[BranchingChoice] = branchingQueue.toArray
         branchingQ(scala.util.Random.nextInt(branchingQ.length))
     }
+}
+
+class Mut {
+    int value;
+
+    public Mut(int i) {
+        value = i;
+    }
+}
+
+    /*
 
     def getInsertionCost(request: Int, numChoices: Mut[Int]): scala.collection.mutable.Queue[BranchingChoice] = {
         val branchingQueue: scala.collection.mutable.Queue[BranchingChoice] = scala.collection.mutable.Queue.empty[BranchingChoice]
@@ -589,10 +733,10 @@ public class DARPModelVH {
 
     def addToInsertionObjChange(request: Int, v: Int, cvi: Int, ncvi: Int, change: Int): Unit = {
         if (!insertionObjChange(request).contains(v)) {
-            insertionObjChange(request)(v) = scala.collection.mutable.HashMap[Int, scala.collection.mutable.HashMap[Int, Int]]()
+            insertionObjChange(request)(v) = HashMap[Int, HashMap[Int, Int]]()
         }
         if (!insertionObjChange(request)(v).contains(cvi)) {
-            insertionObjChange(request)(v)(cvi) = scala.collection.mutable.HashMap[Int, Int]()
+            insertionObjChange(request)(v)(cvi) = HashMap[Int, Int]()
         }
         insertionObjChange(request)(v)(cvi)(ncvi) = change
     }
@@ -612,7 +756,7 @@ public class DARPModelVH {
     }
 
     def printRoutes(): Unit = {
-        for (v <- numVehiclesRange) {
+        for (int v=0;v<numVehicles;v++) {
             val begin = getBeginDepot(v)
             val end = getEndDepot(v)
             var i = begin
@@ -625,7 +769,7 @@ public class DARPModelVH {
         }
     }
     def printRoutes(solSucc: Array[Int], servingV : Array[Int]): Unit = {
-        for (v <- numVehiclesRange) {
+        for (int v=0;v<numVehicles;v++) {
             val begin = getBeginDepot(v)
             val end = getEndDepot(v)
             var i = begin
@@ -639,7 +783,7 @@ public class DARPModelVH {
     }
 
     def printBestRoutesSolution(): Unit = {
-        for (v <- numVehiclesRange) {
+        for (int v=0;v<numVehicles;v++) {
             val begin = getBeginDepot(v)
             val end = getEndDepot(v)
             var i = begin
@@ -654,7 +798,7 @@ public class DARPModelVH {
 
     def printCurrentSolution(): Unit = {
         println("Darp Current Solution")
-        for (v <- numVehiclesRange) {
+        for (int v=0;v<numVehicles;v++) {
             val begin = getBeginDepot(v)
             val end = getEndDepot(v)
             var i = begin
@@ -683,11 +827,11 @@ public class DARPModelVH {
     }
 
     // Getter
-    def getVehicleOfDepot(i: Int): Int = if (beginDepotRange.contains(i)) i - 2 * numRequests else i - (2 * numRequests + numVehicles)
+    def getVehicleOfDepot(int i) { return if (beginDepotRange.contains(i)) i - 2 * numRequests else i - (2 * numRequests + numVehicles)
 
-    def getBeginDepot(i: Int): Int = 2 * numRequests + i
+    def getBeginDepot(int i) { return 2 * numRequests + i
 
-    def getEndDepot(i: Int): Int = numVars - numVehicles + i
+    def getEndDepot(int i) { return numVars - numVehicles + i
 
     def isBeginDepot(i: Int): Boolean = i >= 2 * numRequests && i < numVars - numVehicles
 
@@ -698,15 +842,15 @@ public class DARPModelVH {
         if (isBeginDepot(vertex)) servingTime(vertex) + dist else servingTime(vertex) + servingDuration(vertex) + dist
     }
 
-    def getCorrespondingRequest(i: Int): Int = if (i < numRequests) i else i - numRequests
+    def getCorrespondingRequest(int i) { return if (i < numRequests) i else i - numRequests
 
-    def getCorrespondingPickup(i: Int): Int = i - numRequests
+    def getCorrespondingPickup(int i) { return i - numRequests
 
-    def getCorrespondingDelivery(i: Int): Int = i + numRequests
+    def getCorrespondingDelivery(int i) { return i + numRequests
 
     def getCriticalVertex(request: Int): Int = if (timeWindowStarts(request) > 0 || timeWindowEnds(request) < timeHorizon) request else request + numRequests
 
-    def getCorrespondingVertex(i: Int): Int = if (isPickup(i)) getCorrespondingDelivery(i) else getCorrespondingPickup(i)
+    def getCorrespondingVertex(int i) { return if (isPickup(i)) getCorrespondingDelivery(i) else getCorrespondingPickup(i)
 
     def isPickup(i: Int): Boolean = i < numRequests
 
@@ -744,7 +888,7 @@ public class DARPModelVH {
 
     def getDistanceObjective: Int = {
         var routeLength = 0
-        for (v <- numVehiclesRange) {
+        for (int v=0;v<numVehicles;v++) {
             val begin = getBeginDepot(v)
             val end = getEndDepot(v)
             var i = begin
@@ -780,10 +924,5 @@ public class DARPModelVH {
 
     def exportBestSol: DARPSolution = exportSol(bestSolution.get)
 
-  case class BranchingChoice(request: Int, cvSucc: Int, ncvSucc: Int, change: Int, vehicle: Int)
-
-  case class Mut[A](var value: A) {}
 }
-
-class DarpSol(var succ: Array[Int], var pred: Array[Int], var servingVehicle: Array[Int], var cost: Double, var minServingTime: Array[Double], var maxServingTime: Array[Double])
-
+*/

@@ -25,7 +25,7 @@ class DARPDataModel{
         boolean isDrop() { return !isPickup(); }
     }
 
-    class DARPRequest {
+    static class DARPRequest {
         int pickup;
         int drop;
         int maxRideTime;
@@ -35,7 +35,7 @@ class DARPDataModel{
         }
     }
 
-    class DARPVehicle {
+    static class DARPVehicle {
         int start;
         int end;
         int capacity;
@@ -45,17 +45,22 @@ class DARPDataModel{
         }
     }
 
-    class DARPInstance{
+    static class DARPInstance{
         String name;
         DARPVehicle[] vehicles;
         DARPRequest[] requests;
         DARPStop[] sites;
         int[][] distances;
-        int nSites = sites.length;
-        int nVehicles = vehicles.length;
-        int nRequests = requests.length;
-        public DARPInstance(String n, DARPVehicle[] v, DARPRequest[] r, DARPStop[] s, int[][] d){
-            name = n; vehicles = v; requests = r; sites = s; distances = d;
+        int nSites;
+        int nVehicles;
+        int nRequests;
+        public DARPInstance(String name, DARPVehicle[] vehicles, DARPRequest[] requests,
+                            DARPStop[] sites, int[][] distances){
+            this.name = name; this.vehicles = vehicles; this.requests = requests;
+            this.sites = sites; this.distances = distances;
+            nSites = sites.length;
+            nVehicles = vehicles.length;
+            nRequests = requests.length;
         }
         int minTravelTime(int request) {
             int pickup = requests[request].pickup;
@@ -89,5 +94,23 @@ class DARPDataModel{
             instance = i; paths = p;
         }
     }
+
+    class DarpSol {
+        int[] succ;
+        int[] pred;
+        int[] servingVehicle;
+        double cost;
+        double[] minServingTime;
+        double[] maxServingTime;
+    }
+
+    class BranchingChoice {
+        int request;
+        int cvSucc;
+        int ncvSucc;
+        int change;
+        int vehicle;
+    }
+
 }
 
