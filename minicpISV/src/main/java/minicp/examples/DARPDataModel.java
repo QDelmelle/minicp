@@ -95,21 +95,31 @@ class DARPDataModel{
         }
     }
 
-    class DarpSol {
+    static class DarpSol {
         int[] succ;
         int[] pred;
         int[] servingVehicle;
         double cost;
         double[] minServingTime;
         double[] maxServingTime;
+
+        public DarpSol(int[] succ, int[] pred, int[] servingV, double c, double[] minServingTime, double[] maxServingTime) {
+            this.succ = succ; this.pred = pred; servingVehicle = servingV; cost = c;
+            this.minServingTime = minServingTime;
+            this.maxServingTime = maxServingTime;
+        }
     }
 
-    class BranchingChoice {
+    static class BranchingChoice {
         int request;
         int cvSucc;
         int ncvSucc;
         int change;
         int vehicle;
+
+        public BranchingChoice(int request, int cvi, int ncvi, int change, int v) {
+            this.request = request; cvSucc = cvi; ncvSucc = ncvi; this.change = change; vehicle = v;
+        }
     }
 
 }

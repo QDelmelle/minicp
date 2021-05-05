@@ -2,10 +2,7 @@ package minicp.examples;
 
 import minicp.engine.constraints.Equal;
 import minicp.engine.constraints.LessOrEqual;
-import minicp.engine.core.BoolVar;
-import minicp.engine.core.IntVar;
-import minicp.engine.core.IntVarViewOffset;
-import minicp.engine.core.Solver;
+import minicp.engine.core.*;
 
 import minicp.examples.DARPParser.*;
 import minicp.examples.DARPDataModel.*;
@@ -150,8 +147,7 @@ class DARPModelVH {
         postUnaryConstraint();
         postCumulativeConstraint();
 
-        // On solution
-        /*
+        // search algorithm
         search = makeDfs(cp, () -> {
             boolean CL = false;
             for (StateBool C : customersLeft) if (C.value()) CL = true;
@@ -163,12 +159,13 @@ class DARPModelVH {
                 Procedure[] branches = new Procedure[points.length];
                 for (int i=0;i<points.length;i++) {
                     int[] p = points[i];
-                    branches[i] = () -> branchRequestPoint(request, (p[1], p[2], p[3], p[4]);
+                    branches[i] = () -> branchRequestPoint(request, new int[]{p[1], p[2], p[3], p[4]});
                 }
                 return branch(branches);
             }
         });
 
+        // On solution
         search.onSolution(() -> {
             System.out.println("Total route cost: " + getDistanceObjective()/100.0);
             System.out.println("best solution found:= " + bestSolutionObjective/100.0);
@@ -197,7 +194,6 @@ class DARPModelVH {
             }
             System.out.println("-------------------------");
         });
-        */
         boolean solFound = false;
 
 //  println(start(nSols = Int.MaxValue, failureLimit = Int.MaxValue, timeLimit = (remainTime/1000.0).round.toInt))
@@ -248,18 +244,18 @@ class DARPModelVH {
 
     static int getCorrespondingRequest(int i) { return (i < numRequests) ? i : i - numRequests; }
 
-    int getCorrespondingPickup(int i) { return i - numRequests; }
+    static int getCorrespondingPickup(int i) { return i - numRequests; }
 
-    int getCorrespondingDelivery(int i) { return i + numRequests; }
+    static int getCorrespondingDelivery(int i) { return i + numRequests; }
 
-    int getCriticalVertex(int request) {
+    static int getCriticalVertex(int request) {
         return (timeWindowStarts[request] > 0 || timeWindowEnds[request] < timeHorizon) ?
                 request : request + numRequests; }
 
-    int getCorrespondingVertex(int i) { return (isPickup(i)) ?
+    static int getCorrespondingVertex(int i) { return (isPickup(i)) ?
             getCorrespondingDelivery(i) : getCorrespondingPickup(i); }
 
-    boolean isPickup(int i) { return i < numRequests; }
+    static boolean isPickup(int i) { return i < numRequests; }
 
     boolean isDelivery(int i) { return i >= numRequests && i < 2 * numRequests; }
 
@@ -269,7 +265,7 @@ class DARPModelVH {
         return timeWindowStarts[vertex] > 0 || timeWindowEnds[vertex] < timeHorizon;
     }
 
-    int getArrivalTimeValue(int vertex, int successor, boolean getMin) {
+    static int getArrivalTimeValue(int vertex, int successor, boolean getMin) {
         if (isBeginDepot(vertex)) {
             if (getMin) return servingTime[vertex].min() + travelTimeMatrix[vertex][successor];
             else return servingTime[vertex].max() + travelTimeMatrix[vertex][successor];
@@ -389,7 +385,7 @@ class DARPModelVH {
         }
     }
 
-    void relax(int nRelax) {
+    static void relax(int nRelax) {
         Set<Integer> relaxedCustomers = selectRelaxedCustomers(currentSolution, nRelax);
         int[] solSucc = new int[numVars];
         Arrays.setAll(solSucc, i -> currentSolution.succ[i]);
@@ -430,7 +426,7 @@ class DARPModelVH {
         }
     }
 
-    int getUnassignedMinVehicleMinInsertionPointsRequest() {
+    static int getUnassignedMinVehicleMinInsertionPointsRequest() {
         int minChoices = Integer.MAX_VALUE;
         int minVehicles = numVehicles + 1;
         List<BranchingChoice> bQueueBuffer = new ArrayList<BranchingChoice>();
@@ -439,7 +435,7 @@ class DARPModelVH {
             if (!customersLeft[i].value()) continue;
             int tempChange = Integer.MIN_VALUE;
             Mut numChoices = new Mut(0);
-            Queue<BranchingChoice> branchingQueue = getInsertionCost(i, numChoices);
+            Iterable<BranchingChoice> branchingQueue = getInsertionCost(i, numChoices);
             if (servingVehicle[i].size() < minVehicles) {
                 minVehicles = servingVehicle[i].size();
                 bQueueBuffer.clear();
@@ -467,7 +463,7 @@ class DARPModelVH {
         return bc.request;
     }
 
-    int getUnassignedRequest() {
+    static int getUnassignedRequest() {
         for (int i=0 ; i<numRequests; i++) {
             if (!customersLeft[i].value()) continue;
             insertionObjChange[i] = new HashMap<Integer, HashMap<Integer, HashMap<Integer, Integer>>>();
@@ -478,7 +474,7 @@ class DARPModelVH {
         return getUnassignedMinVehicleMinInsertionPointsRequest();
     }
 
-    int[][] getInsertionPoints(int request) {
+    static int[][] getInsertionPoints(int request) {
         List<int[]> vehiclePointsChangeBuffer = new ArrayList<int[]>();
         for (int v : insertionObjChange[request].keySet()) {
             for (int cv : insertionObjChange[request].get(v).keySet()) {
@@ -498,7 +494,7 @@ class DARPModelVH {
         return vehiclePointsChange;
     }
 
-    void branchRequestPoint(int request, int[] point) {
+    static void branchRequestPoint(int request, int[] point) {
         int vehicle = point[0], cvSucc = point[1], ncvSucc = point[2], change = point[3];
         int cvv = getCriticalVertex(request);
         int ncv = getCorrespondingVertex(cvv);
@@ -531,7 +527,7 @@ class DARPModelVH {
         }
     }
 
-    void updateCapacityLeftInRoute(int v, int start) {
+    static void updateCapacityLeftInRoute(int v, int start) {
         int begin = getBeginDepot(v);
         int end = getEndDepot(v);
         int star = start;
@@ -546,7 +542,7 @@ class DARPModelVH {
         }
     }
 
-    boolean insertVertexIntoRoute(int i, int j) {
+    static boolean insertVertexIntoRoute(int i, int j) {
         if (!tryPost(new LessOrEqual(getArrivalTime(i, j), servingTime[j])) ||
                 !tryPost(new LessOrEqual(getArrivalTime(pred[j].value(), i), servingTime[i])))
             return false;
@@ -557,33 +553,258 @@ class DARPModelVH {
         return true;
     }
 
-    BranchingChoice getBestBranchingDecision(int request) {
-        var branchingQueue: ArrayBuffer[BranchingChoice] = ArrayBuffer[BranchingChoice]()
-        val cvv = getCriticalVertex(request)
-        val ncv = getCorrespondingVertex(cvv)
-        var bestCvi = -1
-        var bestNcvi = -1
-        var bestChange = Int.MinValue
-        for (v <- 0 until numVehicles) {
-            if (insertionObjChange(request).contains(v) && servingVehicle(request).hasValue(v)) {
-                for (cvi <- insertionObjChange(request)(v).keys) {
-                    for (ncvi <- insertionObjChange(request)(v)(cvi).keys) {
-                        if (insertionObjChange(request)(v)(cvi)(ncvi) > bestChange) {
-                            bestChange = insertionObjChange(request)(v)(cvi)(ncvi)
-                                    bestCvi = cvi
-                            bestNcvi = ncvi
-                            branchingQueue.clear()
-                            branchingQueue += BranchingChoice(request, cvi, ncvi, bestChange, servingVehicle(cvi).value)
+    static BranchingChoice getBestBranchingDecision(int request) {
+        ArrayList<BranchingChoice> branchingQueue = new ArrayList<BranchingChoice>();
+        int cvv = getCriticalVertex(request);
+        int ncv = getCorrespondingVertex(cvv);
+        int bestCvi = -1;
+        int bestNcvi = -1;
+        int bestChange = Integer.MIN_VALUE;
+        for (int v=0;v<numVehicles;v++) {
+            if (insertionObjChange[request].containsKey(v) && servingVehicle[request].contains(v)) {
+                for (int cvi : insertionObjChange[request].get(v).keySet()) {
+                    for (int ncvi : insertionObjChange[request].get(v).get(cvi).keySet()) {
+                        if (insertionObjChange[request].get(v).get(cvi).get(ncvi) > bestChange) {
+                            bestChange = insertionObjChange[request].get(v).get(cvi).get(ncvi);
+                            bestCvi = cvi;
+                            bestNcvi = ncvi;
+                            branchingQueue.clear();
+                            branchingQueue.add(new BranchingChoice(request, cvi, ncvi, bestChange,
+                                    servingVehicle[cvi].min()));
                         }
-            else if (insertionObjChange(request)(v)(cvi)(ncvi) == bestChange) {
-                            branchingQueue += BranchingChoice(request, cvi, ncvi, bestChange, servingVehicle(cvi).value)
+                        else if (insertionObjChange[request].get(v).get(cvi).get(ncvi) == bestChange) {
+                            branchingQueue.add(new BranchingChoice(request, cvi, ncvi, bestChange,
+                                    servingVehicle[cvi].min()));
                         }
                     }
                 }
             }
         }
-        val branchingQ: Array[BranchingChoice] = branchingQueue.toArray
-        branchingQ(scala.util.Random.nextInt(branchingQ.length))
+        BranchingChoice[] bQueue = branchingQueue.toArray(new BranchingChoice[0]);
+        Random rn = new Random();
+        return bQueue[rn.nextInt(bQueue.length)];
+    }
+
+    static Iterable<BranchingChoice> getInsertionCost(int request, Mut numChoices) {
+        ArrayList<BranchingChoice> branchingQueue = new ArrayList<BranchingChoice>();
+        numChoices.value = 0;
+        int cvv = getCriticalVertex(request);
+        int ncv = getCorrespondingVertex(cvv);
+        int bestCvi = -1;
+        int bestNcvi = -1;
+        int bestChange = Integer.MIN_VALUE;
+
+        for (int v=0;v<numVehicles;v++) {
+            if (insertionObjChange[request].containsKey(v) && servingVehicle[request].contains(v)) {
+                for (int cvi : insertionObjChange[request].get(v).keySet()) {
+                    for (int ncvi : insertionObjChange[request].get(v).get(cvi).keySet()) {
+                        numChoices.value++;
+                        if (insertionObjChange[request].get(v).get(cvi).get(ncvi) > bestChange) {
+                            bestChange = insertionObjChange[request].get(v).get(cvi).get(ncvi);
+                            bestCvi = cvi;
+                            bestNcvi = ncvi;
+                            branchingQueue.clear();
+                            branchingQueue.add(new BranchingChoice(request, cvi, ncvi, bestChange,
+                                    servingVehicle[cvi].min()));
+                        }
+                        else if (insertionObjChange[request].get(v).get(cvi).get(ncvi) == bestChange) {
+                            branchingQueue.add(new BranchingChoice(request, cvi, ncvi, bestChange,
+                                    servingVehicle[cvi].min()));
+                        }
+                    }
+                }
+            }
+        }
+        return branchingQueue;
+    }
+
+    static void setInsertionCost(int request, int v) {
+        int cvv = getCriticalVertex(request);
+        int ncv = getCorrespondingVertex(cvv);
+        int begin = getBeginDepot(v);
+        int end = getEndDepot(v);
+        int start = succ[begin].value();
+        while(start != end){
+            if(getArrivalTimeValue(pred[start].value(), cvv, true) <= servingTime[cvv].max()
+                    && getArrivalTimeValue(cvv, start, true) <= servingTime[start].max()){
+                setBestServingTimeFail(request, v, start);
+            }
+            start = succ[start].value();
+        }
+        if(getArrivalTimeValue(pred[start].value(), cvv, true) <= servingTime[cvv].max()
+                && getArrivalTimeValue(cvv, start, true) <= servingTime[start].max()){
+            setBestServingTimeFail(request, v, start);
+        }
+    }
+
+    static void setBestServingTimeFail(int request, int v, int start) {
+        int begin = getBeginDepot(v);
+        int end = getEndDepot(v);
+        int cvv = getCriticalVertex(request);
+        int ncv = getCorrespondingVertex(cvv);
+        int cvvMinServingTime = Math.max(
+                getArrivalTimeValue(pred[start].value(), cvv, true),
+                timeWindowStarts[cvv]);
+        int cvvMaxServingTime = Math.min(
+                servingTime[start].max() - travelTimeMatrix[start][cvv] - servingDuration[cvv],
+                timeWindowEnds[cvv]);
+        if (cvvMaxServingTime < cvvMinServingTime) {
+            return;
+        }
+        int changeCvv = servingTime[start].max()
+                - (getArrivalTimeValue(pred[start].value(), cvv, true)
+                + servingDuration[cvv] + travelTimeMatrix[cvv][start]);
+        if (changeCvv < 0) {
+            return;
+        }
+        changeCvv -= 80 * (travelTimeMatrix[cvv][start] + travelTimeMatrix[pred[start].value()][cvv]
+                - travelTimeMatrix[pred[start].value()][start]);
+        int changeNcv = 0;
+        succ[cvv].setValue(start);
+        pred[cvv].setValue(pred[start].value());
+        succ[pred[cvv].value()].setValue(cvv);
+        pred[start].setValue(cvv);
+        if (isPickup(cvv)) {
+            int index = start;
+            int p = cvv;
+            int minRideTime = maxRideTime;
+            boolean done = false;
+            while (index != begin && !done) {
+                if (p == cvv) {
+                    minRideTime = travelTimeMatrix[cvv][ncv];
+                }
+                else {
+                    minRideTime = servingTime[p].min() + servingDuration[p]
+                            + travelTimeMatrix[p][ncv] - (cvvMaxServingTime + servingDuration[cvv]);
+                }
+                if (minRideTime > maxRideTime) {
+                    done = true;
+                }
+                int ncvMinServingTime = Math.max(getArrivalTimeValue(p, ncv, true),
+                        timeWindowStarts[ncv]);
+                int ncvMaxServingTime = Math.min(servingTime[index].max() - travelTimeMatrix[index][ncv]
+                        - servingDuration[ncv], timeWindowEnds[ncv]);
+
+                changeNcv = servingTime[index].max()
+                        - (getArrivalTimeValue(pred[index].value(), ncv, true)
+                        + servingDuration[ncv] + travelTimeMatrix[ncv][index]);
+
+                if (ncvMaxServingTime >= ncvMinServingTime && changeNcv >= 0) {
+                    changeNcv -= 80 * (travelTimeMatrix[ncv][index] + travelTimeMatrix[pred[index].value()][ncv]
+                            - travelTimeMatrix[pred[index].value()][index]);
+                    addToInsertionObjChange(request, v, start, index, changeCvv + changeNcv);
+                    if (capacityLeftInRoute[index].value() < vertexLoadChange[cvv]) {
+                        done = true;
+                    }
+                }
+                p = index;
+                index = succ[index].value();
+            }
+        } else {
+            int p = pred[cvv].value();
+            int index = cvv;
+            int minRideTime = maxRideTime;
+            boolean done = false;
+            while (index != begin && capacityLeftInRoute[index].value() >= vertexLoadChange[ncv] && !done) {
+                if (index == cvv) {
+                    minRideTime = travelTimeMatrix[ncv][cvv];
+                }
+                else {
+                    minRideTime = cvvMinServingTime - (getArrivalTimeValue(p, ncv, false)
+                            + servingDuration[ncv]);
+                }
+                if (minRideTime > maxRideTime) {
+                    done = true;
+                }
+                int ncvMinServingTime = Math.max(getArrivalTimeValue(p, ncv, true),
+                        timeWindowStarts[ncv]);
+                int ncvMaxServingTime = Math.min(servingTime[index].max() - travelTimeMatrix[index][ncv]
+                        - servingDuration[ncv], timeWindowEnds[ncv]);
+                changeNcv = servingTime[index].max() - (getArrivalTimeValue(pred[index].value(), ncv, true)
+                        + servingDuration[ncv] + travelTimeMatrix[ncv][index]);
+                if(ncvMaxServingTime >= ncvMinServingTime && changeNcv >= 0){
+                    changeNcv -= 80 * (travelTimeMatrix[ncv][index] + travelTimeMatrix[pred[index].value()][ncv]
+                            - travelTimeMatrix[pred[index].value()][index]);
+                    addToInsertionObjChange(request, v, start, index, changeCvv + changeNcv);
+                }
+                index = p;
+                p = pred[p].value();
+            }
+        }
+
+        succ[pred[cvv].value()].setValue(succ[cvv].value());
+        pred[succ[cvv].value()].setValue(pred[cvv].value());
+        succ[cvv].setValue(cvv);
+        pred[cvv].setValue(cvv);
+    }
+
+    static void addToInsertionObjChange(int request, int v, int cvi, int ncvi, int change) {
+        if (!insertionObjChange[request].containsKey(v)) {
+            insertionObjChange[request].put(v, new HashMap<Integer, HashMap<Integer, Integer>>());
+        }
+        if (!insertionObjChange[request].get(v).containsKey(cvi)) {
+            insertionObjChange[request].get(v).put(cvi, new HashMap<Integer, Integer>());
+        }
+        insertionObjChange[request].get(v).get(cvi).put(ncvi, change);
+    }
+
+    /**
+     * @param s
+     * @param numCustomersToRelax
+     * @return a set of [numCustomersToRelax] randomly selected customers.
+     */
+    static Set<Integer> selectRelaxedCustomers(DarpSol s, int numCustomersToRelax) {
+        int[] customers = new int[numRequests];
+        Arrays.setAll(customers, i -> i);
+        int relaxEnd = 0;
+        while(relaxEnd < numCustomersToRelax && relaxEnd < customers.length){
+            Random rn = new Random();
+            int toRelax = relaxEnd + rn.nextInt(numRequests-relaxEnd);
+            int cRelaxed = customers[toRelax];
+            customers[toRelax] = customers[relaxEnd];
+            customers[relaxEnd] = cRelaxed;
+            relaxEnd++;
+        }
+        Set<Integer> ret = new HashSet<Integer>();
+        for (int i=0;i<relaxEnd;i++) ret.add(customers[i]);
+        return ret;
+    }
+
+    static void clearCustomerLeft() {
+        for (StateBool cl : customersLeft) cl.setValue(false);
+    }
+
+    static boolean tryPost(Constraint c) {
+        try {
+            cp.post(c);
+        } catch (InconsistencyException e) {
+            return false;
+        }
+        return true;
+    }
+
+    // return the total distance traveled by all vehicles
+    static int getDistanceObjective() {
+        int routeLength = 0;
+        for (int v=0;v<numVehicles;v++) {
+            int begin = getBeginDepot(v);
+            int end = getEndDepot(v);
+            int i = begin;
+            while (i != end) {
+                routeLength += travelTimeMatrix[i][succ[i].value()];
+                i = succ[i].value();
+            }
+        }
+        return routeLength;
+    }
+
+    static boolean isPositive(StateInt[] array) {
+        for (int i=0; i<array.length; i++) {
+            if (array[i].value() < 0) {
+                return false;
+            }
+        }
+        return true;
     }
 }
 
@@ -596,164 +817,6 @@ class Mut {
 }
 
     /*
-
-    def getInsertionCost(request: Int, numChoices: Mut[Int]): scala.collection.mutable.Queue[BranchingChoice] = {
-        val branchingQueue: scala.collection.mutable.Queue[BranchingChoice] = scala.collection.mutable.Queue.empty[BranchingChoice]
-        numChoices.value = 0
-        val cvv = getCriticalVertex(request)
-        val ncv = getCorrespondingVertex(cvv)
-        var bestCvi = -1
-        var bestNcvi = -1
-        var bestChange = Int.MinValue
-
-        for (v <- 0 until numVehicles) {
-            if (insertionObjChange(request).contains(v) && servingVehicle(request).hasValue(v)) {
-                for (cvi <- insertionObjChange(request)(v).keys) {
-                    for (ncvi <- insertionObjChange(request)(v)(cvi).keys) {
-                        numChoices.value += 1
-                        if (insertionObjChange(request)(v)(cvi)(ncvi) > bestChange) {
-                            bestChange = insertionObjChange(request)(v)(cvi)(ncvi)
-                                    bestCvi = cvi
-                            bestNcvi = ncvi
-                            branchingQueue.clear()
-                            branchingQueue.enqueue(BranchingChoice(request, cvi, ncvi, bestChange, servingVehicle(cvi).value))
-                        }
-            else if (insertionObjChange(request)(v)(cvi)(ncvi) == bestChange) {
-                            branchingQueue.enqueue(BranchingChoice(request, cvi, ncvi, bestChange, servingVehicle(cvi).value))
-                        }
-                    }
-                }
-            }
-        }
-        branchingQueue
-    }
-
-    def setInsertionCost(request: Int, v: Int): Unit = {
-        val cvv = getCriticalVertex(request)
-        val ncv = getCorrespondingVertex(cvv)
-        val begin = getBeginDepot(v)
-        val end = getEndDepot(v)
-        var start = succ(begin).value
-        while(start != end){
-            if(getArrivalTimeValue(pred(start).value, cvv, true) <= servingTime(cvv).max && getArrivalTimeValue(cvv, start, true) <= servingTime(start).max){
-                setBestServingTimeFail(request, v, start)
-            }
-            start = succ(start).value
-        }
-        if(getArrivalTimeValue(pred(start).value, cvv, true) <= servingTime(cvv).max && getArrivalTimeValue(cvv, start, true) <= servingTime(start).max){
-            setBestServingTimeFail(request, v, start)
-        }
-    }
-
-    def setBestServingTimeFail(request: Int, v: Int, start: Int): Unit = {
-        val begin = getBeginDepot(v)
-        val end = getEndDepot(v)
-        val cvv = getCriticalVertex(request)
-        val ncv = getCorrespondingVertex(cvv)
-        val cvvMinServingTime = math.max(getArrivalTimeValue(pred(start).value, cvv, true), timeWindowStarts(cvv))
-        val cvvMaxServingTime = math.min(servingTime(start).max - getTravelTime(start, cvv) - servingDuration(cvv), timeWindowEnds(cvv))
-        if (cvvMaxServingTime < cvvMinServingTime) {
-            return
-        }
-        var changeCvv = servingTime(start).max - (getArrivalTimeValue(pred(start).value, cvv, true) + servingDuration(cvv) + getTravelTime(cvv, start))
-        if (changeCvv < 0) {
-            return
-        }
-        changeCvv -= 80 * (getTravelTime(cvv, start) + getTravelTime(pred(start).value, cvv) - getTravelTime(pred(start).value, start))
-        var changeNcv = 0
-        succ(cvv).setValue(start)
-        pred(cvv).setValue(pred(start).value)
-        succ(pred(cvv).value).setValue(cvv)
-        pred(start).setValue(cvv)
-        if (isPickup(cvv)) {
-            var index = start
-            var p = cvv
-            var minRideTime = maxRideTime
-            var done = false
-            while (index != begin && !done) {
-                if (p == cvv) {
-                    minRideTime = getTravelTime(cvv, ncv)
-                }
-                else {
-                    minRideTime = servingTime(p).min + servingDuration(p) + getTravelTime(p, ncv) - (cvvMaxServingTime + servingDuration(cvv))
-                }
-                if (minRideTime > maxRideTime) {
-                    done = true
-                }
-                val ncvMinServingTime = math.max(getArrivalTimeValue(p, ncv, true), timeWindowStarts(ncv))
-                val ncvMaxServingTime = math.min(servingTime(index).max - getTravelTime(index, ncv) - servingDuration(ncv), timeWindowEnds(ncv))
-
-                changeNcv = servingTime(index).max - (getArrivalTimeValue(pred(index).value, ncv, true) + servingDuration(ncv) + getTravelTime(ncv, index))
-
-
-
-                if (ncvMaxServingTime >= ncvMinServingTime && changeNcv >= 0) {
-                    changeNcv -= 80 * (getTravelTime(ncv, index) + getTravelTime(pred(index).value, ncv) - getTravelTime(pred(index).value, index))
-                    addToInsertionObjChange(request, v, start, index, changeCvv + changeNcv)
-                    if (capacityLeftInRoute(index).value < vertexLoadChange(cvv)) {
-                        done = true
-                    }
-                }
-                p = index
-                index = succ(index).value
-            }
-        }
-        else {
-            var p = pred(cvv).value
-            var index = cvv
-            var minRideTime = maxRideTime
-            var done = false
-            while (index != begin && capacityLeftInRoute(index).value >= vertexLoadChange(ncv) && !done) {
-                if (index == cvv) {
-                    minRideTime = getTravelTime(ncv, cvv)
-                }
-                else {
-                    minRideTime = cvvMinServingTime - (getArrivalTimeValue(p, ncv, false) + servingDuration(ncv))
-                }
-                if (minRideTime > maxRideTime) {
-                    done = true
-                }
-                val ncvMinServingTime = math.max(getArrivalTimeValue(p, ncv, true), timeWindowStarts(ncv))
-                val ncvMaxServingTime = math.min(servingTime(index).max - getTravelTime(index, ncv) - servingDuration(ncv), timeWindowEnds(ncv))
-                changeNcv = servingTime(index).max - (getArrivalTimeValue(pred(index).value, ncv, true) + servingDuration(ncv) + getTravelTime(ncv, index))
-                if(ncvMaxServingTime >= ncvMinServingTime && changeNcv >= 0){
-                    changeNcv -= 80 * (getTravelTime(ncv, index) + getTravelTime(pred(index).value, ncv) - getTravelTime(pred(index).value, index))
-                    addToInsertionObjChange(request, v, start, index, changeCvv + changeNcv)
-                }
-                index = p
-                p = pred(p).value
-            }
-        }
-
-        succ(pred(cvv).value).setValue(succ(cvv).value)
-        pred(succ(cvv).value).setValue(pred(cvv).value)
-        succ(cvv).setValue(cvv)
-        pred(cvv).setValue(cvv)
-    }
-
-    def addToInsertionObjChange(request: Int, v: Int, cvi: Int, ncvi: Int, change: Int): Unit = {
-        if (!insertionObjChange(request).contains(v)) {
-            insertionObjChange(request)(v) = HashMap[Int, HashMap[Int, Int]]()
-        }
-        if (!insertionObjChange(request)(v).contains(cvi)) {
-            insertionObjChange(request)(v)(cvi) = HashMap[Int, Int]()
-        }
-        insertionObjChange(request)(v)(cvi)(ncvi) = change
-    }
-
-
-    def selectRelaxedCustomers(s: DarpSol, numCustomersToRelax: Int): Set[Int] = {
-        val customers = Array.tabulate(numRequests)(i => i)
-        var relaxEnd = 0
-        while(relaxEnd < numCustomersToRelax && relaxEnd < customers.length){
-            val toRelax = relaxEnd + Random.nextInt(numRequests-relaxEnd)
-            val cRelaxed = customers(toRelax)
-            customers(toRelax) = customers(relaxEnd)
-            customers(relaxEnd) = cRelaxed
-            relaxEnd += 1
-        }
-        customers.take(relaxEnd).toSet
-    }
 
     def printRoutes(): Unit = {
         for (int v=0;v<numVehicles;v++) {
@@ -819,96 +882,6 @@ class Mut {
             h += 1
         }
         println("customers Left := " + custLeft.mkString(","))
-    }
-
-    def clearCustomerLeft(): Unit = {
-        if (customersLeft.nonEmpty)
-            for (i <- customersLeft) customersLeft.remove(i)
-    }
-
-    // Getter
-    def getVehicleOfDepot(int i) { return if (beginDepotRange.contains(i)) i - 2 * numRequests else i - (2 * numRequests + numVehicles)
-
-    def getBeginDepot(int i) { return 2 * numRequests + i
-
-    def getEndDepot(int i) { return numVars - numVehicles + i
-
-    def isBeginDepot(i: Int): Boolean = i >= 2 * numRequests && i < numVars - numVehicles
-
-    def isEndDepot(i: Int): Boolean = i >= numVars - numVehicles && i < numVars
-
-    def getArrivalTime(vertex: Int, successor: Int): CPIntVar = {
-        val dist = travelTimeMatrix(vertex)(successor)
-        if (isBeginDepot(vertex)) servingTime(vertex) + dist else servingTime(vertex) + servingDuration(vertex) + dist
-    }
-
-    def getCorrespondingRequest(int i) { return if (i < numRequests) i else i - numRequests
-
-    def getCorrespondingPickup(int i) { return i - numRequests
-
-    def getCorrespondingDelivery(int i) { return i + numRequests
-
-    def getCriticalVertex(request: Int): Int = if (timeWindowStarts(request) > 0 || timeWindowEnds(request) < timeHorizon) request else request + numRequests
-
-    def getCorrespondingVertex(int i) { return if (isPickup(i)) getCorrespondingDelivery(i) else getCorrespondingPickup(i)
-
-    def isPickup(i: Int): Boolean = i < numRequests
-
-    def isDelivery(i: Int): Boolean = i >= numRequests && i < 2 * numRequests
-
-    def isCustomerVertex(i: Int): Boolean = i < 2 * numRequests
-
-    def isCriticalVertex(vertex: Int): Boolean = timeWindowStarts(vertex) > 0 || timeWindowEnds(vertex) < timeHorizon
-
-    def getTravelTimeMatrix: Array[Array[Int]] = travelTimeMatrix
-
-    def getTravelTime(i: Int, j: Int): Int = travelTimeMatrix(i)(j)
-
-    def getNumVehicles: Int = numVehicles
-
-    def getBestSolution: DarpSol = bestSolution.get
-
-    def getArrivalTimeValue(vertex: Int, successor: Int, getMin: Boolean): Int = {
-        if (isBeginDepot(vertex)) {
-            if (getMin) return servingTime(vertex).min + travelTimeMatrix(vertex)(successor) else return servingTime(vertex).max + travelTimeMatrix(vertex)(successor)
-        }
-        if (getMin)  servingTime(vertex).min + servingDuration(vertex) + travelTimeMatrix(vertex)(successor) else  servingTime(vertex).max + servingDuration(vertex) + travelTimeMatrix(vertex)(successor)
-    }
-
-    def tryPost(c: Constraint): Boolean = {
-        try {
-            solver.post(c)
-        } catch {
-            case _: Inconsistency => {
-                return false
-            }
-        }
-        true
-    }
-
-    def getDistanceObjective: Int = {
-        var routeLength = 0
-        for (int v=0;v<numVehicles;v++) {
-            val begin = getBeginDepot(v)
-            val end = getEndDepot(v)
-            var i = begin
-            while (i != end) {
-                routeLength += travelTimeMatrix(i)(succ(i).value)
-                i = succ(i).value
-            }
-        }
-        routeLength
-    }
-
-    def getBestSolutionObjective: Int = bestSolutionObjective
-
-    def isPositive(array: Array[ReversibleInt]): Boolean = {
-        for (i <- array.indices) {
-            if (array(i).value < 0) {
-                return false
-            }
-        }
-        true
     }
 
     def exportSol(sol: DarpSol): DARPSolution = {
