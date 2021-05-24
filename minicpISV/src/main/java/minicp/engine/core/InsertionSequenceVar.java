@@ -3,6 +3,8 @@ package minicp.engine.core;
 import minicp.util.Procedure;
 import minicp.util.exception.InconsistencyException;
 
+import java.util.List;
+
 /**
  * A variable representing a sequence of integers.
  * Its domain is represented by <S, I, P, E, R>
@@ -24,6 +26,11 @@ public interface InsertionSequenceVar {
 
     /**
      * return the max size of S.
+     */
+    int domainSize();
+
+    /**
+     * return the number of members in S.
      */
     int size();
 
@@ -53,10 +60,22 @@ public interface InsertionSequenceVar {
     String allInserts();
 
     /**
+     * @param e an element not yet in S.
+     * @return a table containing all possible insertions of e in the current sequence.
+     */
+    List<Integer> getInserts(int e);
+
+    /**
      * return the current successor of e in S. if e == n, e is considered
      * as the start symbol $
      */
     int nextMember(int e);
+
+    /**
+     * return the current predecessor of e in S. if e == n, e is considered
+     * as the start symbol $
+     */
+    int prevMember(int e);
 
     /**
      * returns true iif (e, p) is in I.
@@ -103,13 +122,13 @@ public interface InsertionSequenceVar {
     void propagateOnExclude(Constraint c);
 
     /**
-     * Asks that {@link Constraint#propagate()} is called whenever an element is required.
-     * We say that a <i>require</i> event occurs.
+     * Asks that {@link Constraint#propagate()} is called whenever the insertion set I is modified.
+     * We say that a <i>IChange</i> event occurs.
      *
      * @param c the constraint for which the {@link Constraint#propagate()}
-     *          method should be called on require events of this variable.
+     *          method should be called on IChange events of this variable.
      */
-    void propagateOnRequire(Constraint c);
+    void propagateOnIChange(Constraint c);
 
     /**
      * Asks that {@link Constraint#propagate()} is called whenever an element is inserted.
@@ -120,4 +139,8 @@ public interface InsertionSequenceVar {
      */
     void propagateOnInsert(Constraint c);
 
+    /**
+     * creates a new empty domain for this variable
+     */
+    void resetDomain();
 }

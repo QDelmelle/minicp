@@ -20,15 +20,11 @@ public class Last extends AbstractConstraint {
 
     public void propagate(){
         if (V.isMember(l)) {
-            if (V.nextMember(l) != V.size()) throw new InconsistencyException();
+            if (V.nextMember(l) != V.domainSize()) throw new InconsistencyException();
         } else {
-            int x = V.size();
-            while(V.nextMember(x) != V.size()){
-                x = V.nextMember(x);
-            }
-            V.insert(l, x);
+            V.insert(l, V.prevMember(V.domainSize()));
         }
-        for (int i=0; i<V.size(); i++){
+        for (int i=0; i<V.domainSize(); i++){
             V.remInsert(i, l);
         }
     }

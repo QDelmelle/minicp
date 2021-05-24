@@ -7,12 +7,16 @@ import minicp.state.StateStack;
 import minicp.util.exception.InconsistencyException;
 import minicp.util.exception.NotImplementedException;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * an object representing the domain of the ISV.
  */
 public class ISVDomain {
     private int n;
     private StateInt[] succ;
+    private StateInt[] pred;
     private StateSparseSet elems;
     private StateInt[] elemPos;
     private StateInt r, p;
@@ -21,8 +25,10 @@ public class ISVDomain {
     public ISVDomain(StateManager sm, int n){
         this.n = n;
         succ = new StateInt[n+1];
+        pred = new StateInt[n+1];
         for (int i = 0; i <= n; i++){
             succ[i] = sm.makeStateInt(i);
+            pred[i] = sm.makeStateInt(i);
         }
         elemPos = new StateInt[n];
         for (int i = 0; i < n; i++){
@@ -90,7 +96,9 @@ public class ISVDomain {
 
     public int nextMember(int e)  { return succ[e].value(); }
 
-    public boolean canInsert(int e, int p)  { return (posPreds[e].contains(p)); }
+    public int prevMember(int e) { return pred[e].value(); }
+
+    public boolean canInsert(int e, int p)  { return posPreds[e].contains(p); }
 
     public void remInsert(int e, int p)  { posPreds[e].remove(p); }
 
@@ -99,7 +107,10 @@ public class ISVDomain {
         if (canInsert(e, p)) {
             // remove all inserts of e
             posPreds[e].removeAll();
+
             succ[e].setValue(succ[p].value());
+            pred[succ[e].value()].setValue(e);
+            pred[e].setValue(p);
             succ[p].setValue(e);
             int x = elems.get(r.value());
             if (x != e) {
@@ -111,7 +122,7 @@ public class ISVDomain {
         } else throw new InconsistencyException();
     }
 
-    public void require(int e) {
+    public void require(int e) { // ?
         if (getStatus(e) == 2) throw new InconsistencyException();
         if (getStatus(e) == 0) return;
         int x = elems.get(r.value());
@@ -148,4 +159,15 @@ public class ISVDomain {
         } else return 1;
     }
 
+    public List<Integer> getInserts(int e) {
+        List<Integer> ret = new ArrayList<Integer>();
+        for (int p: posPreds[e].toArray()) {
+            if (isMember(p) || p==n) ret.add(p);
+        }
+        return ret;
+    }
+
+    public int size() {
+        return r.value();
+    }
 }

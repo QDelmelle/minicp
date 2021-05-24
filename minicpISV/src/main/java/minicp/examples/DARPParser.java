@@ -14,7 +14,7 @@ public class DARPParser {
     }
 
     private static DARPStop lineToStop(String[] line) {
-        if (line.length != 7) System.out.println(line.length);
+        if (line.length != 7) System.out.println("error reading stop: "+line.length);
         int place = Integer.parseInt(line[0]);
         int load = Integer.parseInt(line[4]);
         int request = -1;
@@ -48,23 +48,20 @@ public class DARPParser {
         int maxRideTime = Integer.parseInt(header[4]) * SCALING; //Max time in vehicle for request (service excluded)
 
         DARPStop startDepot = lineToStop(ir.getNextLine()); //start depot
+        DARPStop endDepot = startDepot;
 
         ArrayList<DARPStop> stoplist = new ArrayList<DARPStop>();
         String[] stopline = ir.getNextLine();
         int nStop = 0;
         while (stopline != null) {
             DARPStop stop = lineToStop(stopline);
-            if (stop.load > 0) {
+            if (stop.load != 0) {
                 stoplist.add(stop);
                 nStop++;
-            }
+            } else endDepot = stop;
             stopline = ir.getNextLine();
         }
-        DARPStop[] stops = new DARPStop[nStop];
-        for (int i = 0; i < nStop; i++) stops[i] = stoplist.get(i);
-
-        DARPStop endDepot = (stoplist.get(nStop-1).load == 0) ?
-                stoplist.get(nStop-1) : startDepot;
+        DARPStop[] stops = stoplist.toArray(new DARPStop[0]);
 
         // Generating stop for start end depot per vehicle
         int nSite = nVehicle*2 + nStop;
@@ -85,7 +82,7 @@ public class DARPParser {
 
         DARPVehicle[] vehicles = new DARPVehicle[nVehicle];
         for (int v = 0; v<nVehicle; v++) {
-            vehicles[v] = new DARPVehicle(nRequests+v, nRequests+nVehicle+v, vCapacity, maxRouteDuration);
+            vehicles[v] = new DARPVehicle(nStop+v, nStop+nVehicle+v, vCapacity, maxRouteDuration);
         }
 
         DARPRequest[] requests = new DARPRequest[nRequests];

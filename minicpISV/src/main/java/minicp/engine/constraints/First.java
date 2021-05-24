@@ -21,12 +21,12 @@ public class First extends AbstractConstraint {
 
     public void propagate(){
         if (V.isMember(f)) {
-            if (V.nextMember(V.size()) != f) throw new InconsistencyException();
+            if (V.nextMember(V.domainSize()) != f) throw new InconsistencyException();
         } else {
             V.insert(f, -1);
         }
-        for (int i=0; i<V.size(); i++){
-            V.remInsert(i, V.size());
+        for (int i=0; i<V.domainSize(); i++){
+            V.remInsert(i, V.domainSize());
         }
     }
 }

@@ -23,7 +23,7 @@ public class Dependency extends AbstractConstraint {
     public void post(){
         propagate();
         V.propagateOnExclude(this);
-        V.propagateOnRequire(this);
+        //V.propagateOnRequire(this);
         V.propagateOnInsert(this);
     }
 
