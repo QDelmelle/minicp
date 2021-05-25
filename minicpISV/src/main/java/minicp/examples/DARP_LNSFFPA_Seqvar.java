@@ -87,7 +87,7 @@ class DARP_LNSFFPA_Seqvar {
         String path = "C:\\Users\\Utilisateur\\Documents\\UNIF2020\\TFE\\DARP RK\\DARP\\Cordeau\\a3-24.txt";
         //path = "C:\\Users\\Utilisateur\\Documents\\UNIF2020\\TFE\\DARP RK\\DARP\\sample.txt";
         instance = DARPParser.parseInstance(path);
-        System.out.println("firstSolOnly= "+firstSolOnly);
+        System.out.println("firstSolOnly= " + firstSolOnly);
 
         // Data
 
@@ -99,41 +99,41 @@ class DARP_LNSFFPA_Seqvar {
         maxRideTime = instance.requests[0].maxRideTime;
         maxRouteDuration = instance.vehicles[0].maxDuration;
         for (DARPStop site : instance.sites) timeHorizon = Math.max(timeHorizon, site.winEnd);
-        maxSize = numRequests/2;
+        maxSize = numRequests / 2;
 
-        System.out.println("numVars = "+numVars);
-        System.out.println("numRequests = "+numRequests);
-        System.out.println("numVehicles = "+numVehicles);
+        System.out.println("numVars = " + numVars);
+        System.out.println("numRequests = " + numRequests);
+        System.out.println("numVehicles = " + numVehicles);
 
         // Variables necessary for posting constraints
         dist = instance.distances;
         load = new int[instance.nSites];
-        for (int i=0;i<numVars;i++) load[i] = instance.sites[i].load;
+        for (int i = 0; i < numVars; i++) load[i] = instance.sites[i].load;
         timeWindowStarts = new int[instance.nSites];
-        for (int i=0;i<numVars;i++) timeWindowStarts[i] = instance.sites[i].winStart;
+        for (int i = 0; i < numVars; i++) timeWindowStarts[i] = instance.sites[i].winStart;
         timeWindowEnds = new int[instance.nSites];
-        for (int i=0;i<numVars;i++) timeWindowEnds[i] = instance.sites[i].winEnd;
+        for (int i = 0; i < numVars; i++) timeWindowEnds[i] = instance.sites[i].winEnd;
 
         // Variables and structures related to modelling
         servingTime = new IntVar[numVars];
         servingVehicle = makeIntVarArray(cp, numVars, 0, numVehicles);
         route = new InsertionSequenceVar[numVehicles];
-        for (int i=0;i<numVehicles;i++) route[i] = makeISV(cp, numVars);
+        for (int i = 0; i < numVehicles; i++) route[i] = makeISV(cp, numVars);
         capacityLeftInRoute = new StateInt[numVars];
-        for (int i=0;i<numVars;i++)
+        for (int i = 0; i < numVars; i++)
             capacityLeftInRoute[i] = cp.getStateManager().makeStateInt(vehicleCapacity);
         servingDuration = new int[numVars];
-        for (int i=0;i<numVars;i++) servingDuration[i] = instance.sites[i].service;
+        for (int i = 0; i < numVars; i++) servingDuration[i] = instance.sites[i].service;
         insertionObjChange = new HashMap[numVars];
         customersLeft = new StateBool[numRequests];
-        for (int i=0;i<numRequests;i++)
+        for (int i = 0; i < numRequests; i++)
             customersLeft[i] = cp.getStateManager().makeStateBool(false);
 
         //Start solving the problem
         // initialise variables
         initCpVars();
         //Add request to the set of unassigned requests "customersLeft"
-        for (int i=0;i<numRequests;i++) {
+        for (int i = 0; i < numRequests; i++) {
             customersLeft[i].setValue(true);
         }
 
@@ -151,7 +151,7 @@ class DARP_LNSFFPA_Seqvar {
                 int[][] points = getInsertionPoints(request);
                 //System.out.println("branching on request "+request+" with "+points.length+" insertion points...");
                 Procedure[] branches = new Procedure[points.length];
-                for (int i=0;i<points.length;i++) {
+                for (int i = 0; i < points.length; i++) {
                     int[] p = points[i];
                     branches[i] = () -> branchRequestPoint(request, p);
                 }
@@ -171,23 +171,23 @@ class DARP_LNSFFPA_Seqvar {
             int[] predP = new int[numVars];
             Arrays.setAll(predP, i -> route[servingVP[i]].prevMember(i));
             double[] minServingTime = new double[numVars];
-            Arrays.setAll(minServingTime, (i) -> servingTime[i].min()/100);
+            Arrays.setAll(minServingTime, (i) -> servingTime[i].min() / 100);
             double[] maxServingTime = new double[numVars];
-            Arrays.setAll(maxServingTime, (i) -> servingTime[i].max()/100);
+            Arrays.setAll(maxServingTime, (i) -> servingTime[i].max() / 100);
 //    println("maxRideTime: " + maxRideTime/100.0)
 //    println("serving times:")
 //    println(numVarsRange.map(i => i + " (" + minServintgTime(i) + ":" + maxServintgTime(i) + ")").mkString("\n"))
             double rand = Math.random();
             int obj = getDistanceObjective();
             if (obj < currentSolutionObjective || rand < d) {
-                currentSolution = new DarpSol(succP, predP, servingVP,obj/100.0, minServingTime, maxServingTime);
+                currentSolution = new DarpSol(succP, predP, servingVP, obj / 100.0, minServingTime, maxServingTime);
                 currentSolutionObjective = obj;
                 if (currentSolutionObjective < bestSolutionObjective) {
                     bestSolution = new DarpSol(succP, predP, servingVP,
-                            obj/100.0, minServingTime, maxServingTime);
+                            obj / 100.0, minServingTime, maxServingTime);
                     bestSolutionObjective = currentSolutionObjective;
-                    System.out.println("new best solution found:= " + bestSolutionObjective/100.0);
-                    System.out.println("remainingTime := "+remainTime);
+                    System.out.println("new best solution found:= " + bestSolutionObjective / 100.0);
+                    System.out.println("remainingTime := " + remainTime);
                 }
             }
             //System.out.println("-------------------------");
@@ -195,19 +195,19 @@ class DARP_LNSFFPA_Seqvar {
         boolean solFound = false;
 
         //search.solve(); System.out.println("best obj = "+bestSolutionObjective);
-        while(!solFound && remainTime > 0){
+        while (!solFound && remainTime > 0) {
             long t1 = System.currentTimeMillis();
             SearchStatistics stats = search.solve(statistics -> statistics.numberOfSolutions() == 1
                     && statistics.numberOfFailures() <= Math.max(gamma * numVehicles, tau));
             // + (int)Math.round(remainTime / 1000.0)); ??
-            if(stats.numberOfSolutions() == 1) solFound = true;
-            else System.out.println("restart! "+ remainTime);
+            if (stats.numberOfSolutions() == 1) solFound = true;
+            else System.out.println("restart! " + remainTime);
             //System.out.println(stats);
             //solFound = true; // if we don't want restarts
             remainTime -= System.currentTimeMillis() - t1;
         }
 
-        if(!firstSolOnly) lns();
+        if (!firstSolOnly) lns();
         printBestRoutesSolution();
 
         // write sol in a file
@@ -226,11 +226,11 @@ class DARP_LNSFFPA_Seqvar {
     // lns
     static void lns() {
         int i = 2;
-        while(remainTime > 0 && i <= maxSize - range) {
+        while (remainTime > 0 && i <= maxSize - range) {
             int j = 0;
-            while(remainTime > 0 && j <= range) {
+            while (remainTime > 0 && j <= range) {
                 int k = 1;
-                while(remainTime > 0 && k <= numIter) {
+                while (remainTime > 0 && k <= numIter) {
                     int finalI = i;
                     int finalJ = j;
                     long t1 = System.currentTimeMillis();
@@ -240,7 +240,7 @@ class DARP_LNSFFPA_Seqvar {
                                 relax(finalI + finalJ);
                             });
                     k++;
-                    remainTime -= System.currentTimeMillis()-t1;
+                    remainTime -= System.currentTimeMillis() - t1;
                     totalNumFails += stats.numberOfFailures();
                 }
                 j++;
@@ -248,13 +248,14 @@ class DARP_LNSFFPA_Seqvar {
             i++;
         }
     }
+
     static void relax(int nRelax) {
         Set<Integer> relaxedCustomers = selectRelaxedCustomers(currentSolution, nRelax);
         int[] solSucc = new int[numVars];
         Arrays.setAll(solSucc, i -> currentSolution.succ[i]);
         clearCustomerLeft(); // needed?
         for (int r : relaxedCustomers) customersLeft[r].setValue(true);
-        for (int v=0;v<numVehicles;v++) {
+        for (int v = 0; v < numVehicles; v++) {
             route[v].resetDomain();
             int begin = getBeginDepot(v);
             int end = getEndDepot(v);
@@ -265,7 +266,7 @@ class DARP_LNSFFPA_Seqvar {
             int prev = begin;
             while (current != end) {
                 int r = getCorrespondingRequest(current);
-                if(!relaxedCustomers.contains(r)){
+                if (!relaxedCustomers.contains(r)) {
                     if (!insertVertexIntoRoute(current, prev, v)) System.out.println("relax fail!!!");
                     equal(servingVehicle[current], v);
                     prev = current;
@@ -281,14 +282,14 @@ class DARP_LNSFFPA_Seqvar {
         List<Integer> unassignedRequests = new LinkedList<Integer>();
 
         // step 1: minimize number of routes
-        for (int i=0 ; i<numRequests; i++) {
+        for (int i = 0; i < numRequests; i++) {
             if (customersLeft[i].value()) {
                 unassignedRequests.add(i);
                 minVehicles = Math.min(minVehicles, servingVehicle[i].size());
             }
         }
         List<Integer> minRoutesRequests = new LinkedList<Integer>();
-        for (int i: unassignedRequests) {
+        for (int i : unassignedRequests) {
             if (servingVehicle[i].size() == minVehicles) minRoutesRequests.add(i);
         }
 
@@ -296,24 +297,24 @@ class DARP_LNSFFPA_Seqvar {
         int minChoices = Integer.MAX_VALUE;
         int[] bestInsertionCost = new int[numRequests];
         int[] numInsertions = new int[numRequests];
-        for (int r: minRoutesRequests) {
+        for (int r : minRoutesRequests) {
             int[][] iP = getInsertionPoints(r);
             bestInsertionCost[r] = iP[0][3];
             numInsertions[r] = iP.length;
             minChoices = Math.min(minChoices, iP.length);
         }
         List<Integer> minInsPointsRequests = new LinkedList<Integer>();
-        for (int r: minRoutesRequests) {
+        for (int r : minRoutesRequests) {
             if (numInsertions[r] == minChoices) minInsPointsRequests.add(r);
         }
 
         // step 3: minimize cost of best insertion
         int bestChange = Integer.MIN_VALUE;
-        for (int r: minInsPointsRequests) {
+        for (int r : minInsPointsRequests) {
             bestChange = Math.max(bestChange, bestInsertionCost[r]);
         }
         List<Integer> minBestCostRequests = new LinkedList<Integer>();
-        for (int r: minInsPointsRequests) {
+        for (int r : minInsPointsRequests) {
             if (bestInsertionCost[r] == bestChange) minBestCostRequests.add(r);
         }
 
@@ -322,10 +323,10 @@ class DARP_LNSFFPA_Seqvar {
     }
 
     static int getUnassignedRequest() {
-        for (int i=0 ; i<numRequests; i++) {
+        for (int i = 0; i < numRequests; i++) {
             if (!customersLeft[i].value()) continue;
             insertionObjChange[i] = new HashMap<Integer, HashMap<Integer, HashMap<Integer, Integer>>>();
-            for (int v=0;v<numVehicles;v++) {
+            for (int v = 0; v < numVehicles; v++) {
                 setInsertionCost(i, v);
             }
         }
@@ -333,7 +334,6 @@ class DARP_LNSFFPA_Seqvar {
     }
 
     /**
-     *
      * @param request
      * @return all the insertion points of request, sorted in increasing order of insertion cost.
      */
@@ -351,7 +351,7 @@ class DARP_LNSFFPA_Seqvar {
         Arrays.sort(vehiclePointsChange, new Comparator<int[]>() {
             @Override
             public int compare(int[] a, int[] b) {
-                return a[3]-b[3];
+                return a[3] - b[3];
             }
         });
         return vehiclePointsChange;
@@ -380,14 +380,14 @@ class DARP_LNSFFPA_Seqvar {
 
         // recompute the insertions of all remaining unassigned requests for this vehicule
         // and check consistency.
-        for (int i=0 ; i<numRequests; i++) {
+        for (int i = 0; i < numRequests; i++) {
             if (!customersLeft[i].value()) continue;
             if (insertionObjChange[i].containsKey(vehicle)) {
                 insertionObjChange[i].remove(vehicle);
             }
             setInsertionCost(i, vehicle);
             int[][] iP = getInsertionPoints(i);
-            if(iP.length == 0){
+            if (iP.length == 0) {
                 throw new InconsistencyException();
             }
         }
@@ -466,7 +466,7 @@ class DARP_LNSFFPA_Seqvar {
         //-servingDuration[ncv]-dist[ncv][ncvSucc]-servingDuration[ncvPred]-dist[ncvPred][ncv];
         slackAfterInsert += servingTime[cvSucc].max() - servingTime[cvPred].min();
         //-servingDuration[cv]-dist[cv][cvSucc]-servingDuration[cvPred]-dist[cvPred][cv];
-        addToInsertionObjChange(r, v, cvPred, ncvPred, alpha*costIncrease - beta*slackAfterInsert);
+        addToInsertionObjChange(r, v, cvPred, ncvPred, alpha * costIncrease - beta * slackAfterInsert);
     }
 
     static void addToInsertionObjChange(int request, int v, int cvi, int ncvi, int change) {
@@ -489,15 +489,15 @@ class DARP_LNSFFPA_Seqvar {
         Arrays.setAll(customers, i -> i);
         Random rn = new Random();
         int relaxEnd = 0;
-        while(relaxEnd < numCustomersToRelax && relaxEnd < customers.length){
-            int toRelax = relaxEnd + rn.nextInt(numRequests-relaxEnd);
+        while (relaxEnd < numCustomersToRelax && relaxEnd < customers.length) {
+            int toRelax = relaxEnd + rn.nextInt(numRequests - relaxEnd);
             int cRelaxed = customers[toRelax];
             customers[toRelax] = customers[relaxEnd];
             customers[relaxEnd] = cRelaxed;
             relaxEnd++;
         }
         Set<Integer> ret = new HashSet<Integer>();
-        for (int i=0;i<relaxEnd;i++) ret.add(customers[i]);
+        for (int i = 0; i < relaxEnd; i++) ret.add(customers[i]);
         return ret;
     }
 
@@ -517,7 +517,7 @@ class DARP_LNSFFPA_Seqvar {
     // return the total distance traveled by all vehicles
     static int getDistanceObjective() {
         int routeLength = 0;
-        for (int v=0;v<numVehicles;v++) {
+        for (int v = 0; v < numVehicles; v++) {
             int begin = getBeginDepot(v);
             int end = getEndDepot(v);
             int i = begin;
@@ -530,7 +530,7 @@ class DARP_LNSFFPA_Seqvar {
     }
 
     static boolean isPositive(StateInt[] array) {
-        for (int i=0; i<array.length; i++) {
+        for (int i = 0; i < array.length; i++) {
             if (array[i].value() < 0) {
                 return false;
             }
@@ -545,13 +545,21 @@ class DARP_LNSFFPA_Seqvar {
         else return i - (2 * numRequests + numVehicles);
     }
 
-    static int getBeginDepot(int i) { return  2 * numRequests + i; }
+    static int getBeginDepot(int i) {
+        return 2 * numRequests + i;
+    }
 
-    static int getEndDepot(int i) { return numVars - numVehicles + i; }
+    static int getEndDepot(int i) {
+        return numVars - numVehicles + i;
+    }
 
-    static boolean isBeginDepot(int i) { return (i >= 2 * numRequests && i < numVars - numVehicles); }
+    static boolean isBeginDepot(int i) {
+        return (i >= 2 * numRequests && i < numVars - numVehicles);
+    }
 
-    boolean isEndDepot(int i) { return i >= numVars - numVehicles && i < numVars; }
+    boolean isEndDepot(int i) {
+        return i >= numVars - numVehicles && i < numVars;
+    }
 
     static IntVar getArrivalTime(int vertex, int successor) {
         int distance = dist[vertex][successor];
@@ -559,26 +567,43 @@ class DARP_LNSFFPA_Seqvar {
         else return new IntVarViewOffset(servingTime[vertex], servingDuration[vertex] + distance);
     }
 
-    static int getCorrespondingRequest(int i) { return (i < numRequests) ? i : i - numRequests; }
+    static int getCorrespondingRequest(int i) {
+        return (i < numRequests) ? i : i - numRequests;
+    }
 
-    static int getCorrespondingPickup(int i) { return i - numRequests; }
+    static int getCorrespondingPickup(int i) {
+        return i - numRequests;
+    }
 
-    static int getCorrespondingDelivery(int i) { return i + numRequests; }
+    static int getCorrespondingDelivery(int i) {
+        return i + numRequests;
+    }
 
-    static boolean isInbound(int r) { return timeWindowStarts[r] > 0 || timeWindowEnds[r] < timeHorizon; }
+    static boolean isInbound(int r) {
+        return timeWindowStarts[r] > 0 || timeWindowEnds[r] < timeHorizon;
+    }
 
     static int getCriticalVertex(int request) {
         return (isInbound(request)) ?
-                request : request + numRequests; }
+                request : request + numRequests;
+    }
 
-    static int getCorrespondingVertex(int i) { return (isPickup(i)) ?
-            getCorrespondingDelivery(i) : getCorrespondingPickup(i); }
+    static int getCorrespondingVertex(int i) {
+        return (isPickup(i)) ?
+                getCorrespondingDelivery(i) : getCorrespondingPickup(i);
+    }
 
-    static boolean isPickup(int i) { return i < numRequests; }
+    static boolean isPickup(int i) {
+        return i < numRequests;
+    }
 
-    boolean isDelivery(int i) { return i >= numRequests && i < 2 * numRequests; }
+    boolean isDelivery(int i) {
+        return i >= numRequests && i < 2 * numRequests;
+    }
 
-    boolean isCustomerVertex(int i) { return i < 2 * numRequests; }
+    boolean isCustomerVertex(int i) {
+        return i < 2 * numRequests;
+    }
 
     boolean isCriticalVertex(int vertex) {
         return timeWindowStarts[vertex] > 0 || timeWindowEnds[vertex] < timeHorizon;
@@ -598,8 +623,8 @@ class DARP_LNSFFPA_Seqvar {
     // variables && constraints initialization
 
     static void initCpVars() {
-        for (int i=0;i<numVars;i++) {
-            if (i>=2*numRequests) { // i is a depot
+        for (int i = 0; i < numVars; i++) {
+            if (i >= 2 * numRequests) { // i is a depot
                 servingVehicle[i].assign(getVehicleOfDepot(i));
             }
             servingTime[i] = makeIntVar(cp, timeWindowStarts[i], timeWindowEnds[i]);
@@ -607,52 +632,53 @@ class DARP_LNSFFPA_Seqvar {
     }
 
     static void postDependency() { // pas besoin?
-        for (int i=0;i<numRequests;i++) {
-            equal(servingVehicle[i], servingVehicle[i+numRequests]);
-            for (int s=0;s<numVehicles;s++) {
-                cp.post(new Dependency(route[s], new int[]{i, i+numRequests}));
+        for (int i = 0; i < numRequests; i++) {
+            equal(servingVehicle[i], servingVehicle[i + numRequests]);
+            for (int s = 0; s < numVehicles; s++) {
+                cp.post(new Dependency(route[s], new int[]{i, i + numRequests}));
             }
         }
     }
 
     static void postPrecedence() {
-        for (int i=0;i<numRequests;i++) {
+        for (int i = 0; i < numRequests; i++) {
             cp.post(lessOrEqual(servingTime[i], minus(servingTime[numRequests + i],
                     dist[i][i + numRequests] + servingDuration[i])));
-            for (int v=0;v<numVehicles;v++)
-                cp.post(new Precedence(route[v], new int[]{i, i+numRequests}));
+            for (int v = 0; v < numVehicles; v++)
+                cp.post(new Precedence(route[v], new int[]{i, i + numRequests}));
         }
     }
 
     static void postRideTime() {
-        for (int i=0;i<numRequests;i++) {
+        for (int i = 0; i < numRequests; i++) {
             cp.post(lessOrEqual(servingTime[numRequests + i],
                     plus(servingTime[i], servingDuration[i] + maxRideTime)));
         }
     }
 
     static void postMaxRouteDuration() {
-        for (int i=0;i<numVehicles;i++) {
+        for (int i = 0; i < numVehicles; i++) {
             cp.post(lessOrEqual(servingTime[getEndDepot(i)],
                     plus(servingTime[getBeginDepot(i)], maxRouteDuration)));
         }
     }
 
-    static void postTransitionTimes() {} // not needed?
+    static void postTransitionTimes() {
+    } // not needed?
 
     static void postConstraints() {
         if (constraintsPosted) {
             return;
         }
         constraintsPosted = true;
-        for (int i=0;i<numVehicles;i++) {
+        for (int i = 0; i < numVehicles; i++) {
             cp.post(new First(route[i], getBeginDepot(i)));
             cp.post(new Last(route[i], getEndDepot(i)));
             cp.post(lessOrEqual(servingTime[getEndDepot(i)],
                     plus(servingTime[getBeginDepot(i)], timeHorizon)));
         }
-        for (int i=0;i<numRequests;i++)
-            cp.post(equal(servingVehicle[i], servingVehicle[i+numRequests]));
+        for (int i = 0; i < numRequests; i++)
+            cp.post(equal(servingVehicle[i], servingVehicle[i + numRequests]));
         //postDependency();
         postPrecedence();
         postTransitionTimes();
@@ -661,7 +687,7 @@ class DARP_LNSFFPA_Seqvar {
     }
 
     static void printBestRoutesSolution() {
-        for (int v=0;v<numVehicles;v++) {
+        for (int v = 0; v < numVehicles; v++) {
             int begin = getBeginDepot(v);
             int end = getEndDepot(v);
             int i = begin;
@@ -675,8 +701,8 @@ class DARP_LNSFFPA_Seqvar {
     }
 
     private static void printRoutes() {
-        for (int v=0;v<numVehicles;v++){
-            System.out.println("v: "+v+", route: "+route[v].allMembers());
+        for (int v = 0; v < numVehicles; v++) {
+            System.out.println("v: " + v + ", route: " + route[v].allMembers());
         }
     }
 
@@ -691,7 +717,7 @@ class DARP_LNSFFPA_Seqvar {
 
     static void printCurrentSolution() {
         System.out.println("Darp Current Solution");
-        for (int v=0;v<numVehicles;v++) {
+        for (int v = 0; v < numVehicles; v++) {
             int begin = getBeginDepot(v);
             int end = getEndDepot(v);
             int i = begin;

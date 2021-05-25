@@ -50,7 +50,7 @@ public class DARPwithSeq {
     int[] vehicleCap = {6, 4}; //Capacity of vehicles
     int[] vehicleStartDepot = {7, 8};
     int[] vehicleEndDepot = {7, 8};
-    Set<Integer>[] vehicleCompatibility = new HashSet<Integer>[2]; //Categories of patients that the vehicle can take
+    //Set<Integer>[] vehicleCompatibility = new HashSet<Integer>[2]; //Categories of patients that the vehicle can take
     int[] vehicleStartWindow = {0, 0}; //Start window of vehicle
     int[] vehicleEndWindow = {400, 400}; //End window of vehicle
 
@@ -91,12 +91,12 @@ public class DARPwithSeq {
         else return locationMatrix[i][j];
     }
 
-    public static int[] arrayconcat(int[] a1, int[] a2){
+    public static int[] arrayconcat(int[] a1, int[] a2) {
         int l = a1.length + a2.length;
         int[] ret = new int[l];
-        for(int i = 0; i< a1.length; i++)
+        for (int i = 0; i < a1.length; i++)
             ret[i] = a1[i];
-        for(int i = a1.length; i<l; i++)
+        for (int i = a1.length; i < l; i++)
             ret[i] = a2[i];
         return ret;
     }
@@ -107,17 +107,21 @@ public class DARPwithSeq {
         int winStart;
         int winEnd;
         int operation;
-        public Stop(int patient, int place, int winStart, int winEnd, int operation){
+
+        public Stop(int patient, int place, int winStart, int winEnd, int operation) {
             this.patient = patient;
             this.place = place;
             this.winStart = winStart;
             this.winEnd = winEnd;
             this.operation = operation;
         }
-        boolean isDepot(){ return patient == -1; }
 
-        int category(){
-            if(isDepot()) return -1;
+        boolean isDepot() {
+            return patient == -1;
+        }
+
+        int category() {
+            if (isDepot()) return -1;
             else return patientCategory[patient];
         }
 
@@ -126,13 +130,21 @@ public class DARPwithSeq {
             else return patientSrv[patient];
         }
 
-        boolean forward() { return operation < 2; }
+        boolean forward() {
+            return operation < 2;
+        }
 
-        boolean pickup() { return operation == 0 || operation == 2; }
+        boolean pickup() {
+            return operation == 0 || operation == 2;
+        }
 
-        boolean isStartDepot() { return isDepot() && pickup(); }
+        boolean isStartDepot() {
+            return isDepot() && pickup();
+        }
 
-        boolean isEndDepot() { return isDepot() && !pickup(); }
+        boolean isEndDepot() {
+            return isDepot() && !pickup();
+        }
 
         int load() {
             if (isDepot()) return 0;
@@ -143,7 +155,7 @@ public class DARPwithSeq {
 
     public void main(String[] args) {
         int[] patientRdvEnd = new int[nPatient];
-        for (int i=0; i<nPatient; i++)
+        for (int i = 0; i < nPatient; i++)
             patientRdvEnd[i] = patientDur[i] + patientRdv[i];
 
         int[] allPatient = arrayconcat(patientForward, patientBackward); //Patient for each trip
@@ -154,7 +166,7 @@ public class DARPwithSeq {
         ArrayList<int[]> travelBuffer = new ArrayList<int[]>(); //stop1 (id), stop2 (id), forward
 
         //Generating stops for each patient:
-        for (int i=0; i<patientForward.length; i++) {
+        for (int i = 0; i < patientForward.length; i++) {
             int p = patientForward[i];
             int lstFor = patientRdv[p] - patientSrv[p] * 2 - distance(originForward[i], destForward[i]);
 
@@ -170,7 +182,7 @@ public class DARPwithSeq {
             }
         }
 
-        for (int i=0; i<patientForward.length; i++) {
+        for (int i = 0; i < patientForward.length; i++) {
             int p = patientBackward[i];
             int ectBack = patientRdvEnd[p] + patientSrv[p] + distance(originBackward[i], destBackward[i]);
 
@@ -189,12 +201,12 @@ public class DARPwithSeq {
         int nStop = stopBuffer.size();
 
         //Generating stop for start depot:
-        for (int v=0; v<nVehicle; v++)
+        for (int v = 0; v < nVehicle; v++)
             stopBuffer.add(new Stop(-1, vehicleStartDepot[v],
                     Math.max(startTime, vehicleStartWindow[v]),
                     Math.min(endTime, vehicleEndWindow[v]), 0));
 
-        for (int v=0; v<nVehicle; v++)
+        for (int v = 0; v < nVehicle; v++)
             stopBuffer.add(new Stop(-1, vehicleStartDepot[v],
                     Math.max(startTime, vehicleStartWindow[v]),
                     Math.min(endTime, vehicleEndWindow[v]), 3));
@@ -202,15 +214,15 @@ public class DARPwithSeq {
         Stop[] sites = (Stop[]) stopBuffer.toArray();
         int[][] travels = (int[][]) travelBuffer.toArray();
         int[] travelPatient = new int[travels.length];
-        for(int i=0; i<travels.length; i++) {
+        for (int i = 0; i < travels.length; i++) {
             travelPatient[i] = sites[travels[i][1]].patient;
         }
 
         int nSite = sites.length;
 
         int[][] transMatrix = new int[nSite][nSite];
-        for(int i=0; i<nSite; i++) {
-            for(int j=0; j<nSite; j++) {
+        for (int i = 0; i < nSite; i++) {
+            for (int j = 0; j < nSite; j++) {
                 transMatrix[i][j] = distance(sites[i].place, sites[j].place);
             }
         }
@@ -219,27 +231,29 @@ public class DARPwithSeq {
         Solver cp = makeSolver();
 
         BoolVar[] visited = new BoolVarImpl[nPatient];
-        for(int i=0; i<nPatient; i++) {
+        for (int i = 0; i < nPatient; i++) {
             visited[i] = makeBoolVar(cp);
         }
 
         //Stop and travel variables:
 
         IntVar[] arrival = makeIntVarArray(cp, nSite, startTime, endTime);
-        for (int i=0; i<nSite; i++) {
+        for (int i = 0; i < nSite; i++) {
             arrival[i].removeBelow(sites[i].winStart);
             arrival[i].removeAbove(sites[i].winEnd);
         }
         // dummy var?
         IntVar[] duration = makeIntVarArray(cp, nSite, startTime, endTime);
-        for (int i=0; i<nSite; i++) {
+        for (int i = 0; i < nSite; i++) {
             duration[i] = makeIntVar(cp, sites[i].service(), sites[i].service());
         }
 
         IntVar[] departure = makeIntVarArray(nSite, i -> {
             return new IntVarViewOffset(arrival[i], duration[i].min());
         });
-
+    }
+}
+        /*
         IntVar[] siteVehicle = makeIntVarArray(cp, nSite, nVehicle+1);
         for (int i=0; i<nSite; i++) {
             if (sites[i].isDepot()) siteVehicle[i].assign((i-nStop)%nVehicle);
@@ -277,7 +291,7 @@ public class DARPwithSeq {
 
 
         /* constraints */
-
+        /*
         //Setting depots:
         for (v <- sequences.indices) {
         add(First(sequences(v), nStop + v))
@@ -321,13 +335,13 @@ public class DARPwithSeq {
 
 
         /* Objective function */
-
+        /*
         val nServed: CPIntVar = sum(visited)
         maximize(nServed)
 
 
         /* Solution */
-
+        /*
         onSolution {
         println("Patients serviced: " + nServed.value)
         println("Sequences:\n" + sequences.mkString("\n"))
@@ -337,7 +351,7 @@ public class DARPwithSeq {
 
 
         /* Search */
-
+        /*
         def isDecided(stop: Int): Boolean = {
         if(siteVehicle(stop).isBound) siteVehicle(stop).value == nVehicle || sequences(siteVehicle(stop).value).isMember(stop)
         else false
@@ -369,3 +383,4 @@ public class DARPwithSeq {
         println(start())
 
 }
+*/
