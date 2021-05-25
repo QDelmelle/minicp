@@ -86,8 +86,8 @@ class DARPModelVH {
 
     public static void main(String[] args) {
         cp = makeSolver();
-        String path = "C:\\Users\\Utilisateur\\Documents\\UNIF2020\\TFE\\DARP RK\\DARP\\Cordeau\\a3-24.txt";
-        //path = "C:\\Users\\Utilisateur\\Documents\\UNIF2020\\TFE\\DARP RK\\DARP\\sample.txt";
+        String path = "data/DARP/Cordeau/a3-24.txt";
+        //path = "data/DARP/sample.txt";
         instance = DARPParser.parseInstance(path);
         System.out.println("firstSolOnly= " + firstSolOnly);
 
