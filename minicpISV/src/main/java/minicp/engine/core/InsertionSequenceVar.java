@@ -61,7 +61,7 @@ public interface InsertionSequenceVar {
 
     /**
      * @param e an element not yet in S.
-     * @return a table containing all possible insertions of e in the current sequence.
+     * @return a list containing all possible insertions of e in the current sequence.
      */
     List<Integer> getInserts(int e);
 
