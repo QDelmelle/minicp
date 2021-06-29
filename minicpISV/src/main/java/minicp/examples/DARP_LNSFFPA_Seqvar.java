@@ -31,7 +31,7 @@ class DARP_LNSFFPA_Seqvar {
     // meta-parameters
     static int searchTime;
     static int alpha = 1;
-    static int beta = 0;
+    static int beta = 0; // slack doesn't work for now
     static int gamma = 200;
     static int tau = 1000;
     static int maxSize;
@@ -188,6 +188,7 @@ class DARP_LNSFFPA_Seqvar {
         boolean solFound = false;
 
         //search.solve(); System.out.println("best obj = "+bestSolutionObjective);
+        // find initial solution
         while (!solFound && remainTime > 0) {
             long t1 = System.currentTimeMillis();
             SearchStatistics stats = search.solve(statistics -> statistics.numberOfSolutions() == 1
@@ -203,6 +204,8 @@ class DARP_LNSFFPA_Seqvar {
 
         if (!firstSolOnly) lns();
         printBestRoutesSolution();
+        System.out.println(maxRouteDuration);
+        for (int v=0;v<numVehicles;v++) System.out.println(getRouteDuration(v));
         System.out.println("total failures: " + totalNumFails);
 
         // write sol in a file
@@ -257,7 +260,7 @@ class DARP_LNSFFPA_Seqvar {
         Set<Integer> relaxedCustomers = selectRelaxedCustomers(currentSolution, nRelax);
         int[] solSucc = new int[numVars];
         Arrays.setAll(solSucc, i -> currentSolution.succ[i]);
-        customersLeft = new StateSparseSet(cp.getStateManager(), numRequests, 0); // reset customers left
+        //customersLeft = new StateSparseSet(cp.getStateManager(), numRequests, 0); // reset customers left
         for (int r = 0; r < numRequests; r++) {
             if (!relaxedCustomers.contains(r)) customersLeft.remove(r);
         }
@@ -295,8 +298,6 @@ class DARP_LNSFFPA_Seqvar {
                 setInsertionCost(r, v);
             }
         }
-
-        // my version of algo 2, works just as good
         int minVehicles = numVehicles + 1;
 
         // step 1: minimize number of routes
@@ -363,24 +364,9 @@ class DARP_LNSFFPA_Seqvar {
         return vehiclePointsChange;
     }
 
-    // returns the minimum duration of route v.
-    static int getRouteDuration(int v) {
-        int begin = getBeginDepot(v);
-        int end = getEndDepot(v);
-        int p = begin;
-        int i = route[v].nextMember(begin);
-        int rd = 0;
-        while (p != end) {
-            rd += servingDuration[i] + dist[p][i];
-            p = i;
-            i = route[v].nextMember(i);
-        }
-        return rd;
-    }
-
     static void branchRequestPoint(int request, int[] point) {
-        int vehicle = point[0], pPrev = point[1], dPrev = point[2], change = point[3];
-        printDebug("insertion point: " + vehicle + " " + pPrev + " " + dPrev + " " + change);
+        int vehicle = point[0], pPrev = point[1], dPrev = point[2], costIncrease = point[3];
+        printDebug("insertion point: " + vehicle + " " + pPrev + " " + dPrev + " " + costIncrease);
         int pickup = request, drop = request + numRequests;
 
         equal(servingVehicle[pickup], vehicle);
@@ -390,32 +376,25 @@ class DARP_LNSFFPA_Seqvar {
             throw new InconsistencyException();
         }
         if (!insertVertexIntoRoute(drop, dPrev, vehicle)) {
-            printDebug(route[vehicle].allMembers());
+            //printDebug(route[vehicle].allMembers());
             printDebug("fail2");
             throw new InconsistencyException();
         }
         updateCapacityLeftInRoute(vehicle, pickup);
-        if (!isPositive(capacityLeftInRoute)) { // not sure this is useful
-            printDebug("fail3");
-            throw new InconsistencyException();
-        }
-        routeLength[vehicle].setValue(routeLength[vehicle].value() + change + servingDuration[pickup] + servingDuration[drop]);
-        if (routeLength[vehicle].value() > maxRouteDuration) {
-            throw new InconsistencyException();
-        }
-        customersLeft.remove(request);
+        routeLength[vehicle].setValue(routeLength[vehicle].value() + costIncrease + servingDuration[pickup] + servingDuration[drop]);
 
+        customersLeft.remove(request);
         // recompute the insertions of all remaining unassigned requests for this vehicle
         // and check consistency.
-        for (int i : customersLeft.toArray()) {
-            if (insertionObjChange[i].containsKey(vehicle)) {
-                insertionObjChange[i].remove(vehicle);
-            }
-            setInsertionCost(i, vehicle);
-            int[][] iP = getInsertionPoints(i);
-            if (iP.length == 0) {
-                printDebug("fail4");
-                throw new InconsistencyException();
+        for (int r : customersLeft.toArray()) {
+            if (insertionObjChange[r].containsKey(vehicle)) {
+                insertionObjChange[r].remove(vehicle);
+                setInsertionCost(r, vehicle);
+                int[][] iP = getInsertionPoints(r);
+                if (iP.length == 0) {
+                    System.out.println("fail4"); // never fails here, why?
+                    throw new InconsistencyException();
+                }
             }
         }
     }
@@ -431,7 +410,7 @@ class DARP_LNSFFPA_Seqvar {
         try {
             route[v].insert(i, j);
         } catch (InconsistencyException e) {
-            printDebug("coucou");
+            printDebug("insertion fail");
             return false;
         }
         return true;
@@ -455,13 +434,12 @@ class DARP_LNSFFPA_Seqvar {
                 // drop inserted just after pickup
                 int dMinServingTime = Math.max(getArrivalTime(pickup, drop).min(), servingTime[drop].min());
                 int dMaxServingTime = Math.min(servingTime[pSucc].max() - dist[pSucc][drop] - servingDuration[drop], servingTime[drop].max());
-                if (dMaxServingTime >= dMinServingTime) {
-                    //int slackNcv = servingTime[index].max() - (getArrivalTime(p, ncv).min() + servingDuration[ncv] + dist[ncv][index]);
+                if (dMaxServingTime >= dMinServingTime && route[v].canInsert(drop, pickup)) {
+                    int slack = servingTime[pSucc].max() - servingTime[pickup].min() + servingTime[drop].max() - servingTime[pPred].min();
                     int costIncrease = dist[pPred][pickup] + dist[pickup][drop] + dist[drop][pSucc] - dist[pPred][pSucc];
                     // check max route duration
-                    if (costIncrease + servingDuration[pickup] + servingDuration[drop] + routeLength[v].value() <= maxRouteDuration
-                            && route[v].canInsert(drop, pickup))
-                        addToInsertionObjChange(request, v, pPred, pickup, costIncrease);
+                    if (costIncrease + servingDuration[pickup] + servingDuration[drop] + routeLength[v].value() <= maxRouteDuration)
+                        addToInsertionObjChange(request, v, pPred, pickup, alpha*costIncrease - beta*slack);
                 }
 
                 int dPred = pSucc; // drop inserted further
@@ -474,13 +452,13 @@ class DARP_LNSFFPA_Seqvar {
                         // check max ride time
                         if (dMinServingTime - (pMaxServingTime + servingDuration[pickup]) > maxRideTime) done = true;
                         else if (dMaxServingTime >= dMinServingTime) {
-                            //int slackNcv = servingTime[index].max() - (getArrivalTime(p, ncv).min() + servingDuration[ncv] + dist[ncv][index]);
+                            int slack = servingTime[dSucc].max() - servingTime[dPred].min() + servingTime[pSucc].max() - servingTime[pPred].min();
                             int costIncrease = dist[pPred][pickup] + dist[pickup][pSucc] - dist[pPred][pSucc]
                                     + dist[dPred][drop] + dist[drop][dSucc] - dist[dPred][dSucc];
                             // check max route duration
                             int mD = costIncrease + servingDuration[pickup] + servingDuration[drop] + routeLength[v].value();
                             if (mD <= maxRouteDuration) {
-                                addToInsertionObjChange(request, v, pPred, dPred, costIncrease);
+                                addToInsertionObjChange(request, v, pPred, dPred, alpha*costIncrease - beta*slack);
                             }
                         }
                     }
@@ -663,17 +641,17 @@ class DARP_LNSFFPA_Seqvar {
 
     // return the total distance traveled by all vehicles
     static int getDistanceObjective() {
-        int routeLength = 0;
+        int length = 0;
         for (int v = 0; v < numVehicles; v++) {
             int begin = getBeginDepot(v);
             int end = getEndDepot(v);
             int i = begin;
             while (i != end) {
-                routeLength += dist[i][route[v].nextMember(i)];
+                length += dist[i][route[v].nextMember(i)];
                 i = route[v].nextMember(i);
             }
         }
-        return routeLength;
+        return length;
     }
 
     static boolean isPositive(StateInt[] array) {
@@ -765,6 +743,21 @@ class DARP_LNSFFPA_Seqvar {
                 + dist[vertex][successor];
         else return servingTime[vertex].max() + servingDuration[vertex]
                 + dist[vertex][successor];
+    }
+
+    // returns the duration of route v in the solution.
+    static int getRouteDuration(int v) {
+        int begin = getBeginDepot(v);
+        int end = getEndDepot(v);
+        int p = begin;
+        int i = bestSolution.succ[begin];
+        int rd = 0;
+        while (p != end) {
+            rd += servingDuration[i] + dist[p][i];
+            p = i;
+            i = bestSolution.succ[i];
+        }
+        return rd;
     }
 
     static void printBestRoutesSolution() {

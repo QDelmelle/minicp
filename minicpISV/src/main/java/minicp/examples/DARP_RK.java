@@ -70,7 +70,7 @@ class DARPModelVH {
 
     // Variables necessary for posting constraints
     static int[][] dist;
-    static int[] vertexLoadChange;
+    static int[] load;
     static int[] timeWindowStarts;
     static int[] timeWindowEnds;
     static int[] servingDuration;
@@ -87,8 +87,8 @@ class DARPModelVH {
 
     public static void main(String[] args) {
         cp = makeSolver();
-        String path = "data/DARP/Cordeau/a3-24.txt";
-        path = "data/DARP/Cordeau/a2-5.txt";
+        String path = "data/DARP/Cordeau/a6-60.txt";
+        //path = "data/DARP/Cordeau/a2-5.txt";
         //path = "data/DARP/sample.txt";
         instance = DARPParser.parseInstance(path);
         System.out.println("firstSolOnly= " + firstSolOnly);
@@ -111,8 +111,8 @@ class DARPModelVH {
 
         // Variables necessary for posting constraints
         dist = instance.distances;
-        vertexLoadChange = new int[instance.nSites];
-        for (int i = 0; i < numVars; i++) vertexLoadChange[i] = instance.sites[i].load;
+        load = new int[instance.nSites];
+        for (int i = 0; i < numVars; i++) load[i] = instance.sites[i].load;
         timeWindowStarts = new int[instance.nSites];
         for (int i = 0; i < numVars; i++) timeWindowStarts[i] = instance.sites[i].winStart;
         timeWindowEnds = new int[instance.nSites];
@@ -204,7 +204,7 @@ class DARPModelVH {
 
         if (!firstSolOnly) lns();
         printBestRoutesSolution();
-        System.out.println("total failures: "+totalNumFails);
+        System.out.println("total failures: " + totalNumFails);
         //System.out.println("route duration: "+( bestSolution.minServingTime[getEndDepot(1)] - bestSolution.maxServingTime[getBeginDepot(1)] ));
 
         // write sol in a file
@@ -268,8 +268,8 @@ class DARPModelVH {
             int current = begin;
             int prev = -1;
             while (current != end) {
-                int currentRequest = getCorrespondingRequest(current);
-                if (!relaxedCustomers.contains(currentRequest)) {
+                int r = getCorrespondingRequest(current);
+                if (!relaxedCustomers.contains(r)) {
                     if (prev != -1) {
                         succ[prev].setValue(current);
                         pred[current].setValue(prev);
@@ -297,8 +297,6 @@ class DARPModelVH {
                 setInsertionCost(r, v);
             }
         }
-
-        // my version of algo 2, works just as good
         int minVehicles = numVehicles + 1;
 
         // step 1: minimize number of routes
@@ -365,177 +363,103 @@ class DARPModelVH {
         return vehiclePointsChange;
     }
 
-    // returns the minimum duration of route v.
-    static int getRouteDuration(int v) {
-        int begin = getBeginDepot(v);
-        int end = getEndDepot(v);
-        int p = begin;
-        int i = succ[begin].value();
-        int rd = 0;
-        while (p != end) {
-            rd += servingDuration[i] + dist[p][i];
-            p = i;
-            i = succ[i].value();
-        }
-        return rd;
-    }
-
     static void branchRequestPoint(int request, int[] point) {
-        int vehicle = point[0], cvSucc = point[1], ncvSucc = point[2], change = point[3];
-        printDebug("branching point: " + request + " " + cvSucc + " " + ncvSucc + " " + change);
-        int pickup = request;
-        int cv = getCriticalVertex(request), ncv = getCorrespondingVertex(cv);
+        int vehicle = point[0], pPrev = point[1], dPrev = point[2], costIncrease = point[3];
+        printDebug("insertion point: " + vehicle + " " + pPrev + " " + dPrev + " " + costIncrease);
+        int pickup = request, drop = request + numRequests;
 
         equal(servingVehicle[pickup], vehicle);
-        // /!\ insert cv first
-        if (!insertVertexIntoRoute(cv, cvSucc)) {
+        // /!\ insert pickup first
+        if (!insertVertexIntoRoute(pickup, pPrev)) {
             printDebug("fail1");
             throw new InconsistencyException();
         }
-        if (!insertVertexIntoRoute(ncv, ncvSucc)) {
+        if (!insertVertexIntoRoute(drop, dPrev)) {
             printDebug("fail2");
             throw new InconsistencyException();
         }
         updateCapacityLeftInRoute(vehicle, pickup);
-        if (!isPositive(capacityLeftInRoute)) {
-            printDebug("fail3");
-            throw new InconsistencyException();
-        }
-        routeLength[vehicle].setValue(routeLength[vehicle].value() + change + servingDuration[cv] + servingDuration[ncv]);
-        if (routeLength[vehicle].value() > maxRouteDuration) {
-            printDebug("fail5");
-            throw new InconsistencyException();
-        }
-        customersLeft.remove(request);
+        routeLength[vehicle].setValue(routeLength[vehicle].value() + costIncrease + servingDuration[pickup] + servingDuration[drop]);
 
-        // recompute the insertions of all remaining requests for this vehicle
+        customersLeft.remove(request);
+        // recompute the insertions of all remaining unassigned requests for this vehicle
         // and check consistency.
-        for (int i : customersLeft.toArray()) {
-            if (insertionObjChange[i].containsKey(vehicle)) {
-                insertionObjChange[i].remove(vehicle);
-            }
-            setInsertionCost(i, vehicle);
-            int[][] insertionPoint = getInsertionPoints(i);
-            if (insertionPoint.length == 0) {
-                printDebug("fail4");
-                throw new InconsistencyException();
+        for (int r : customersLeft.toArray()) {
+            if (insertionObjChange[r].containsKey(vehicle)) {
+                insertionObjChange[r].remove(vehicle);
+                setInsertionCost(r, vehicle);
+                int[][] iP = getInsertionPoints(r);
+                if (iP.length == 0) {
+                    System.out.println("fail4"); // never fails here, why?
+                    throw new InconsistencyException();
+                }
             }
         }
     }
 
+    // insert i after j in route v.
+    // return false if the insertion fails.
     static boolean insertVertexIntoRoute(int i, int j) {
-        if (!tryPost(new LessOrEqual(getArrivalTime(i, j), servingTime[j]))) return false;
-        if (!tryPost(new LessOrEqual(getArrivalTime(pred[j].value(), i), servingTime[i]))) return false;
-        succ[i].setValue(j);
-        pred[i].setValue(pred[j].value());
-        succ[pred[i].value()].setValue(i);
-        pred[j].setValue(i);
+        int s = succ[j].value();
+        if (!tryPost(new LessOrEqual(getArrivalTime(j, i), servingTime[i])) ||
+                !tryPost(new LessOrEqual(getArrivalTime(i, s), servingTime[s])))
+            return false;
+        succ[j].setValue(i);
+        pred[s].setValue(i);
+        succ[i].setValue(s);
+        pred[i].setValue(j);
         return true;
     }
 
+    // finds all possible insertions of request in route v and compute their cost.
     static void setInsertionCost(int request, int v) {
-        int cvv = getCriticalVertex(request);
+        int pickup = request, drop = request + numRequests;
         int begin = getBeginDepot(v);
         int end = getEndDepot(v);
-        int start = succ[begin].value();
-        boolean done = false;
-        while (!done) {
-            if (start == end) done = true;
-            if (getArrivalTime(pred[start].value(), cvv).min() <= servingTime[cvv].max()
-                    && getArrivalTime(cvv, start).min() <= servingTime[start].max()) {
-                if (capacityLeftInRoute[pred[start].value()].value() >= vertexLoadChange[cvv])
-                    setBestServingTimeFail(request, v, start);
-            }
-            start = succ[start].value();
-        }
-    }
+        int pPred = begin;
+        while (pPred != end) {
+            int pSucc = succ[pPred].value();
+            if (capacityLeftInRoute[pPred].value() >= load[pickup]) {
+                int pMinServingTime = Math.max(getArrivalTime(pPred, pickup).min(), servingTime[pickup].min());
+                int pMaxServingTime = Math.min(servingTime[pSucc].max() - dist[pickup][pSucc] - servingDuration[pickup], servingTime[pickup].max());
+                if (pMaxServingTime < pMinServingTime) {
+                    pPred = pSucc;
+                    continue;
+                }
+                // drop inserted just after pickup
+                int dMinServingTime = Math.max(getArrivalTime(pickup, drop).min(), servingTime[drop].min());
+                int dMaxServingTime = Math.min(servingTime[pSucc].max() - dist[pSucc][drop] - servingDuration[drop], servingTime[drop].max());
+                if (dMaxServingTime >= dMinServingTime) {
+                    int slack = servingTime[pSucc].max() - servingTime[pickup].min() + servingTime[drop].max() - servingTime[pPred].min();
+                    int costIncrease = dist[pPred][pickup] + dist[pickup][drop] + dist[drop][pSucc] - dist[pPred][pSucc];
+                    // check max route duration
+                    if (costIncrease + servingDuration[pickup] + servingDuration[drop] + routeLength[v].value() <= maxRouteDuration)
+                        addToInsertionObjChange(request, v, pPred, pickup, alpha * costIncrease - beta * slack);
+                }
 
-    // finds all possible insertions of request in route v, with critical vertex before start
-    // and compute their cost.
-    static void setBestServingTimeFail(int request, int v, int start) {
-        int begin = getBeginDepot(v);
-        int end = getEndDepot(v);
-        int cvv = getCriticalVertex(request);
-        int ncv = getCorrespondingVertex(cvv);
-        int cvvMinServingTime = Math.max(
-                getArrivalTime(pred[start].value(), cvv).min(),
-                servingTime[cvv].min());
-        int cvvMaxServingTime = Math.min(
-                servingTime[start].max() - dist[cvv][start] - servingDuration[cvv],
-                servingTime[cvv].max());
-        if (cvvMaxServingTime < cvvMinServingTime) {
-            return;
-        }
-        int slackCvv = servingTime[start].max() - (getArrivalTime(pred[start].value(), cvv).min() + servingDuration[cvv] + dist[cvv][start]);
-
-        succ[cvv].setValue(start);
-        pred[cvv].setValue(pred[start].value());
-        succ[pred[cvv].value()].setValue(cvv);
-        pred[start].setValue(cvv);
-        if (isPickup(cvv)) {
-            int index = start;
-            int p = cvv;
-            int minRideTime = maxRideTime;
-            boolean done = false;
-            while (!done && capacityLeftInRoute[p].value() >= vertexLoadChange[cvv]) {
-                if (index == end) done = true;
-                if (p == cvv) {
-                    minRideTime = dist[cvv][ncv];
-                } else {
-                    minRideTime = getArrivalTime(p, ncv).min() - (cvvMaxServingTime + servingDuration[cvv]);
-                }
-                if (minRideTime > maxRideTime) {
-                    done = true;
-                } else {
-                    int ncvMinServingTime = Math.max(getArrivalTime(p, ncv).min(), servingTime[ncv].min());
-                    int ncvMaxServingTime = Math.min(servingTime[index].max() - dist[index][ncv] - servingDuration[ncv], servingTime[ncv].max());
-                    if (ncvMaxServingTime >= ncvMinServingTime) {
-                        int slackNcv = servingTime[index].max() - (getArrivalTime(p, ncv).min() + servingDuration[ncv] + dist[ncv][index]);
-                        int costIncrease;
-                        if (p == cvv) costIncrease = dist[pred[cvv].value()][cvv] + dist[cvv][ncv] + dist[ncv][start] - dist[pred[cvv].value()][start];
-                        else costIncrease = dist[pred[cvv].value()][cvv] + dist[cvv][start] - dist[pred[cvv].value()][start]
-                                + dist[p][ncv] + dist[ncv][index] - dist[p][index];
-                        if (routeLength[v].value() + costIncrease + servingDuration[cvv] + servingDuration[ncv] <= maxRouteDuration)
-                            addToInsertionObjChange(request, v, start, index, alpha * costIncrease - beta * (slackNcv + slackCvv));
+                int dPred = pSucc; // drop inserted further
+                boolean done = false;
+                while (dPred != end && capacityLeftInRoute[dPred].value() >= load[pickup] && !done) {
+                    int dSucc = succ[dPred].value();
+                    dMinServingTime = Math.max(getArrivalTime(dPred, drop).min(), servingTime[drop].min());
+                    dMaxServingTime = Math.min(servingTime[dSucc].max() - dist[dSucc][drop] - servingDuration[drop], servingTime[drop].max());
+                    // check max ride time
+                    if (dMinServingTime - (pMaxServingTime + servingDuration[pickup]) > maxRideTime) done = true;
+                    else if (dMaxServingTime >= dMinServingTime) {
+                        int slack = servingTime[dSucc].max() - servingTime[dPred].min() + servingTime[pSucc].max() - servingTime[pPred].min();
+                        int costIncrease = dist[pPred][pickup] + dist[pickup][pSucc] - dist[pPred][pSucc]
+                                + dist[dPred][drop] + dist[drop][dSucc] - dist[dPred][dSucc];
+                        // check max route duration
+                        int mD = costIncrease + servingDuration[pickup] + servingDuration[drop] + routeLength[v].value();
+                        if (mD <= maxRouteDuration) {
+                            addToInsertionObjChange(request, v, pPred, dPred, alpha * costIncrease - beta * slack);
+                        }
                     }
+                    dPred = dSucc;
                 }
-                p = index;
-                index = succ[index].value();
             }
-        } else {
-            int p = pred[cvv].value();
-            int index = cvv;
-            int minRideTime = maxRideTime;
-            boolean done = false;
-            while (index != begin && capacityLeftInRoute[p].value() >= vertexLoadChange[ncv] && !done) {
-                if (index == cvv) {
-                    minRideTime = dist[ncv][cvv];
-                } else {
-                    minRideTime = cvvMinServingTime - (getArrivalTime(p, ncv).max() + servingDuration[ncv]);
-                }
-                if (minRideTime > maxRideTime) {
-                    done = true;
-                } else {
-                    int ncvMinServingTime = Math.max(getArrivalTime(p, ncv).min(), servingTime[ncv].min());
-                    int ncvMaxServingTime = Math.min(servingTime[index].max() - dist[index][ncv] - servingDuration[ncv], servingTime[ncv].max());
-                    if (ncvMaxServingTime >= ncvMinServingTime) {
-                        int slackNcv = servingTime[index].max() - (getArrivalTime(p, ncv).min() + servingDuration[ncv] + dist[ncv][index]);
-                        int costIncrease;
-                        if (index == cvv) costIncrease = dist[p][ncv] + dist[cvv][ncv] + dist[cvv][start] - dist[p][start];
-                        else costIncrease = dist[pred[cvv].value()][cvv] + dist[cvv][start] - dist[pred[cvv].value()][start]
-                                + dist[p][ncv] + dist[ncv][index] - dist[p][index];
-                        if (routeLength[v].value() + costIncrease + servingDuration[cvv] + servingDuration[ncv] <= maxRouteDuration)
-                            addToInsertionObjChange(request, v, start, index, alpha * costIncrease - beta * (slackNcv + slackCvv));
-                    }
-                }
-                index = p;
-                p = pred[p].value();
-            }
+            pPred = pSucc;
         }
-        succ[pred[cvv].value()].setValue(succ[cvv].value());
-        pred[succ[cvv].value()].setValue(pred[cvv].value());
-        succ[cvv].setValue(cvv);
-        pred[cvv].setValue(cvv);
     }
 
     static void addToInsertionObjChange(int request, int v, int cvi, int ncvi, int change) {
@@ -561,7 +485,7 @@ class DARPModelVH {
         int capacity = capacityLeftInRoute[pred[index].value()].value();
         while (index != end) {
             //System.out.println(index);
-            capacity -= vertexLoadChange[index];
+            capacity -= load[index];
             capacityLeftInRoute[index].setValue(capacity);
             index = succ[index].value();
         }
@@ -600,17 +524,17 @@ class DARPModelVH {
 
     // return the total distance traveled by all vehicles
     static int getDistanceObjective() {
-        int routeLength = 0;
+        int length = 0;
         for (int v = 0; v < numVehicles; v++) {
             int begin = getBeginDepot(v);
             int end = getEndDepot(v);
             int i = begin;
             while (i != end) {
-                routeLength += dist[i][succ[i].value()];
+                length += dist[i][succ[i].value()];
                 i = succ[i].value();
             }
         }
-        return routeLength;
+        return length;
     }
 
     static boolean isPositive(StateInt[] array) {
@@ -752,6 +676,21 @@ class DARPModelVH {
         //postMaxRouteDuration();
     }
 
+    // returns the minimum duration of route v.
+    static int getRouteDuration(int v) {
+        int begin = getBeginDepot(v);
+        int end = getEndDepot(v);
+        int p = begin;
+        int i = succ[begin].value();
+        int rd = 0;
+        while (p != end) {
+            rd += servingDuration[i] + dist[p][i];
+            p = i;
+            i = succ[i].value();
+        }
+        return rd;
+    }
+
     static void printBestRoutesSolution() {
         for (int v = 0; v < numVehicles; v++) {
             int begin = getBeginDepot(v);
@@ -793,7 +732,7 @@ class DARPModelVH {
         System.out.println("points: ");
         System.out.println("");
         for (int[] p : points) {
-            System.out.print(p[0]+" "+p[1]+" "+p[2]+" "+p[3]);
+            System.out.print(p[0] + " " + p[1] + " " + p[2] + " " + p[3]);
             System.out.println("");
         }
     }
