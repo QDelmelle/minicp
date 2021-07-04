@@ -82,16 +82,16 @@ public class DARPParser {
 
         DARPVehicle[] vehicles = new DARPVehicle[nVehicle];
         for (int v = 0; v<nVehicle; v++) {
-            vehicles[v] = new DARPVehicle(nStop+v, nStop+nVehicle+v, vCapacity, maxRouteDuration);
+            vehicles[v] = new DARPVehicle(nStop+v, nStop+nVehicle+v, vCapacity);
         }
 
         DARPRequest[] requests = new DARPRequest[nRequests];
         for (int r = 0; r<nRequests; r++) {
-            requests[r] = new DARPRequest(r, nRequests+r, maxRideTime);
+            requests[r] = new DARPRequest(r, nRequests+r);
         }
 
         return new DARPInstance(getNameFromFilePath(filePath),
-                vehicles, requests, sites, distances);
+                vehicles, requests, sites, distances, maxRideTime, maxRouteDuration);
     }
 }
 

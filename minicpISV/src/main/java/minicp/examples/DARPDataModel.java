@@ -1,5 +1,7 @@
 package minicp.examples;
 
+import java.util.*;
+
 class DARPDataModel{
     static class DARPStop{
         int place;
@@ -28,10 +30,9 @@ class DARPDataModel{
     static class DARPRequest {
         int pickup;
         int drop;
-        int maxRideTime;
 
-        public DARPRequest(int p, int d, int mrt){
-            pickup = p; drop = d; maxRideTime = mrt;
+        public DARPRequest(int p, int d){
+            pickup = p; drop = d;
         }
     }
 
@@ -39,9 +40,8 @@ class DARPDataModel{
         int start;
         int end;
         int capacity;
-        int maxDuration;
-        public DARPVehicle(int s, int e, int c, int md){
-            start = s; end = e; capacity = c; maxDuration = md;
+        public DARPVehicle(int s, int e, int c){
+            start = s; end = e; capacity = c;
         }
     }
 
@@ -54,13 +54,17 @@ class DARPDataModel{
         int nSites;
         int nVehicles;
         int nRequests;
+        int maxRideTime;
+        int maxDuration;
         public DARPInstance(String name, DARPVehicle[] vehicles, DARPRequest[] requests,
-                            DARPStop[] sites, int[][] distances){
+                            DARPStop[] sites, int[][] distances, int maxRideTime, int maxDuration){
             this.name = name; this.vehicles = vehicles; this.requests = requests;
             this.sites = sites; this.distances = distances;
             nSites = sites.length;
             nVehicles = vehicles.length;
             nRequests = requests.length;
+            this.maxRideTime = maxRideTime;
+            this.maxDuration = maxDuration;
         }
         int minTravelTime(int request) {
             int pickup = requests[request].pickup;
@@ -69,7 +73,7 @@ class DARPDataModel{
         }
     }
 
-    class DARPStep{
+    static class DARPStep{
         int stop;
         int starttime;
         int endtime;
@@ -79,19 +83,67 @@ class DARPDataModel{
         boolean isTimeFixed(){ return starttime == endtime; }
     }
 
-    class DARPPath{
+    static class DARPPath{
         int vehicle;
-        DARPStep[] steps;
-        public DARPPath(int v, DARPStep[] s){
-            vehicle = v; steps = s;
+        List<DARPStep> steps;
+        int len;
+        public DARPPath(int v){
+            vehicle = v; steps = new ArrayList<DARPStep>(); len = 0;
+        }
+        public void addStep(DARPStep s){
+            steps.add(s);len++;
         }
     }
 
-    class DARPSolution{
+    static class DARPSolution{
         DARPInstance instance;
         DARPPath[] paths;
         public DARPSolution(DARPInstance i, DARPPath[] p){
             instance = i; paths = p;
+        }
+        /**
+         * @return true iif this is a valid solution to the instance and respects all the constraints.
+         */
+        public boolean isValid(){
+            int[] g = new int[instance.nSites];
+            int[] vehicle = new int[instance.nSites];
+            DARPStep[] stops = new DARPStep[instance.nSites];
+            int i = 0;
+            for(int v=0;v<paths.length;v++){
+                for(DARPStep step : paths[v].steps){
+                    stops[step.stop] = step;
+                    if (step.starttime < instance.sites[step.stop].winStart || step.endtime > instance.sites[step.stop].winEnd){
+                        System.out.println("time window violated for site "+step.stop);
+                        return false;
+                    }
+                    g[step.stop] = i;
+                    vehicle[step.stop] = v;
+                    i++;
+                }
+                if (paths[v].steps.get(paths[v].len-1).starttime - paths[v].steps.get(0).endtime > instance.maxDuration){
+                    System.out.println("max route duration violated for vehicle "+v);
+                    return false;
+                }
+            }
+            if (i != instance.nSites){
+                System.out.println("some sites are not visited");
+                return false;
+            }
+            for(int r=0;r<instance.nRequests;r++){
+                if (vehicle[r] != vehicle[r + instance.nRequests]){
+                    System.out.println("request "+r+" is served by 2 vehicles!");
+                    return false;
+                }
+                if (g[r] > g[r+instance.nRequests]) {
+                    System.out.println("request "+r+" is not visited in the right order!");
+                    return false;
+                }
+                if (stops[r+instance.nRequests].starttime - stops[r].endtime - instance.sites[r].service > instance.maxRideTime){
+                    System.out.println("max ride time violated for request "+r);
+                    return false;
+                }
+            }
+            return true;
         }
     }
 
@@ -109,18 +161,5 @@ class DARPDataModel{
             this.maxServingTime = maxServingTime;
         }
     }
-
-    static class BranchingChoice {
-        int request;
-        int cvSucc;
-        int ncvSucc;
-        int change;
-        int vehicle;
-
-        public BranchingChoice(int request, int cvi, int ncvi, int change, int v) {
-            this.request = request; cvSucc = cvi; ncvSucc = ncvi; this.change = change; vehicle = v;
-        }
-    }
-
 }
 

@@ -31,8 +31,8 @@ class DARPModelVH {
 
     // meta-parameters
     static int searchTime;
-    static int alpha = 1;
-    static int beta = 0;
+    static int alpha = 10;
+    static int beta = 1;
     static int gamma = 200;
     static int tau = 1000;
     static int maxSize;
@@ -87,7 +87,7 @@ class DARPModelVH {
 
     public static void main(String[] args) {
         cp = makeSolver();
-        String path = "data/DARP/Cordeau/a6-60.txt";
+        String path = "data/DARP/Cordeau/a3-30.txt";
         //path = "data/DARP/Cordeau/a2-5.txt";
         //path = "data/DARP/sample.txt";
         instance = DARPParser.parseInstance(path);
@@ -100,8 +100,8 @@ class DARPModelVH {
         numRequests = instance.nRequests;
         vehicleCapacity = instance.vehicles[0].capacity;
         numVehicles = instance.nVehicles;
-        maxRideTime = instance.requests[0].maxRideTime;
-        maxRouteDuration = instance.vehicles[0].maxDuration;
+        maxRideTime = instance.maxRideTime;
+        maxRouteDuration = instance.maxDuration;
         for (DARPStop site : instance.sites) timeHorizon = Math.max(timeHorizon, site.winEnd);
         maxSize = Math.max(numRequests / 2, range * 2);
 
@@ -158,7 +158,6 @@ class DARPModelVH {
 
         // On solution
         search.onSolution(() -> {
-            //System.out.println("Total route cost: " + getDistanceObjective()/100.0);
             int[] succP = new int[numVars];
             Arrays.setAll(succP, (i) -> succ[i].value());
             int[] predP = new int[numVars];
@@ -169,9 +168,6 @@ class DARPModelVH {
             Arrays.setAll(minServingTime, (i) -> servingTime[i].min() / 100);
             double[] maxServingTime = new double[numVars];
             Arrays.setAll(maxServingTime, (i) -> servingTime[i].max() / 100);
-//    println("maxRideTime: " + maxRideTime/100.0)
-//    println("serving times:")
-//    println(numVarsRange.map(i => i + " (" + minServintgTime(i) + ":" + maxServintgTime(i) + ")").mkString("\n"))
             double rand = Math.random();
             int obj = getDistanceObjective();
             if (obj < currentSolutionObjective || rand < d) {
@@ -184,11 +180,11 @@ class DARPModelVH {
                     System.out.println("remainingTime := " + remainTime);
                 }
             }
-            //System.out.println("-------------------------");
         });
         boolean solFound = false;
 
         //search.solve(); System.out.println("best obj = "+bestSolutionObjective);
+        // find initial solution
         while (!solFound && remainTime > 0) {
             long t1 = System.currentTimeMillis();
             SearchStatistics stats = search.solve(statistics -> statistics.numberOfSolutions() == 1
@@ -204,8 +200,9 @@ class DARPModelVH {
 
         if (!firstSolOnly) lns();
         printBestRoutesSolution();
+        for (int v = 0; v < numVehicles; v++) System.out.println(getRouteDuration(v));
+        System.out.println("valid solution: " + exportSol().isValid());
         System.out.println("total failures: " + totalNumFails);
-        //System.out.println("route duration: "+( bestSolution.minServingTime[getEndDepot(1)] - bestSolution.maxServingTime[getBeginDepot(1)] ));
 
         // write sol in a file
         //  val pw = new PrintWriter(new File("data/DARP/Cordeau2003/" + name + "Solution.txt"))
@@ -225,11 +222,11 @@ class DARPModelVH {
         int i = 2;
         while (remainTime > 0 && i <= maxSize - range) {
             int j = 0;
+            int finalI = i;
+            int finalJ = j;
             while (remainTime > 0 && j <= range) {
                 int k = 1;
                 while (remainTime > 0 && k <= numIter) {
-                    int finalI = i;
-                    int finalJ = j;
                     long t1 = System.currentTimeMillis();
                     SearchStatistics stats = search.solveSubjectTo(
                             statistics -> statistics.numberOfSolutions() == 1,
@@ -252,31 +249,22 @@ class DARPModelVH {
         Arrays.setAll(solSucc, i -> currentSolution.succ[i]);
         int[] solServingVehicle = new int[numVars];
         Arrays.setAll(solServingVehicle, i -> currentSolution.servingVehicle[i]);
-        customersLeft = new StateSparseSet(cp.getStateManager(), numRequests, 0); // reset customers left
         for (int r = 0; r < numRequests; r++) {
             if (!relaxedCustomers.contains(r)) customersLeft.remove(r);
-        }
-        for (int r : relaxedCustomers) {
-            succ[r].setValue(r);
-            pred[r].setValue(r);
-            succ[r + numRequests].setValue(r + numRequests);
-            pred[r + numRequests].setValue(r + numRequests);
         }
         for (int v = 0; v < numVehicles; v++) {
             int begin = getBeginDepot(v);
             int end = getEndDepot(v);
-            int current = begin;
-            int prev = -1;
+            int current = solSucc[begin];
+            int prev = begin;
             while (current != end) {
                 int r = getCorrespondingRequest(current);
                 if (!relaxedCustomers.contains(r)) {
-                    if (prev != -1) {
-                        succ[prev].setValue(current);
-                        pred[current].setValue(prev);
-                        lessOrEqual(getArrivalTime(prev, current), servingTime[current]);
-                        equal(servingVehicle[current], v);
-                        routeLength[v].setValue(routeLength[v].value() + dist[prev][current] + servingDuration[prev]);
-                    }
+                    succ[prev].setValue(current);
+                    pred[current].setValue(prev);
+                    lessOrEqual(getArrivalTime(prev, current), servingTime[current]);
+                    equal(servingVehicle[current], v);
+                    routeLength[v].setValue(routeLength[v].value() + dist[prev][current] + servingDuration[prev]);
                     prev = current;
                 }
                 current = solSucc[current];
@@ -341,15 +329,15 @@ class DARPModelVH {
 
     /**
      * @param request
-     * @return all the insertion points of request, sorted by increasing order of insertion cost.
+     * @return all the insertion points of request, sorted in increasing order of insertion cost.
      */
     static int[][] getInsertionPoints(int request) {
         List<int[]> vehiclePointsChangeBuffer = new ArrayList<int[]>();
         for (int v : insertionObjChange[request].keySet()) {
-            for (int cv : insertionObjChange[request].get(v).keySet()) {
-                for (int ncv : insertionObjChange[request].get(v).get(cv).keySet()) {
+            for (int pickup : insertionObjChange[request].get(v).keySet()) {
+                for (int drop : insertionObjChange[request].get(v).get(pickup).keySet()) {
                     vehiclePointsChangeBuffer.add(new int[]
-                            {v, cv, ncv, insertionObjChange[request].get(v).get(cv).get(ncv)});
+                            {v, pickup, drop, insertionObjChange[request].get(v).get(pickup).get(drop)});
                 }
             }
         }
@@ -364,9 +352,15 @@ class DARPModelVH {
     }
 
     static void branchRequestPoint(int request, int[] point) {
-        int vehicle = point[0], pPrev = point[1], dPrev = point[2], costIncrease = point[3];
-        printDebug("insertion point: " + vehicle + " " + pPrev + " " + dPrev + " " + costIncrease);
+        int vehicle = point[0], pPrev = point[1], dPrev = point[2], e = point[3];
+        printDebug("insertion point: " + vehicle + " " + pPrev + " " + dPrev + " " + e);
         int pickup = request, drop = request + numRequests;
+        int pSucc = succ[pPrev].value(), dSucc = succ[dPrev].value();
+        int costIncrease;
+        if (dPrev == pickup)
+            costIncrease = dist[pPrev][pickup] + dist[pickup][drop] + dist[drop][pSucc] - dist[pPrev][pSucc];
+        else
+            costIncrease = dist[pPrev][pickup] + dist[pickup][pSucc] - dist[pPrev][pSucc] + dist[dPrev][drop] + dist[drop][dSucc] - dist[dPrev][dSucc];
 
         equal(servingVehicle[pickup], vehicle);
         // /!\ insert pickup first
@@ -378,9 +372,9 @@ class DARPModelVH {
             printDebug("fail2");
             throw new InconsistencyException();
         }
-        updateCapacityLeftInRoute(vehicle, pickup);
-        routeLength[vehicle].setValue(routeLength[vehicle].value() + costIncrease + servingDuration[pickup] + servingDuration[drop]);
 
+        routeLength[vehicle].setValue(routeLength[vehicle].value() + costIncrease + servingDuration[pickup] + servingDuration[drop]);
+        updateCapacityLeftInRoute(vehicle, pickup);
         customersLeft.remove(request);
         // recompute the insertions of all remaining unassigned requests for this vehicle
         // and check consistency.
@@ -390,7 +384,7 @@ class DARPModelVH {
                 setInsertionCost(r, vehicle);
                 int[][] iP = getInsertionPoints(r);
                 if (iP.length == 0) {
-                    System.out.println("fail4"); // never fails here, why?
+                    printDebug("fail4");
                     throw new InconsistencyException();
                 }
             }
@@ -462,14 +456,14 @@ class DARPModelVH {
         }
     }
 
-    static void addToInsertionObjChange(int request, int v, int cvi, int ncvi, int change) {
+    static void addToInsertionObjChange(int request, int v, int pickup, int drop, int cost) {
         if (!insertionObjChange[request].containsKey(v)) {
             insertionObjChange[request].put(v, new HashMap<Integer, HashMap<Integer, Integer>>());
         }
-        if (!insertionObjChange[request].get(v).containsKey(cvi)) {
-            insertionObjChange[request].get(v).put(cvi, new HashMap<Integer, Integer>());
+        if (!insertionObjChange[request].get(v).containsKey(pickup)) {
+            insertionObjChange[request].get(v).put(pickup, new HashMap<Integer, Integer>());
         }
-        insertionObjChange[request].get(v).get(cvi).put(ncvi, change);
+        insertionObjChange[request].get(v).get(pickup).put(drop, cost);
     }
 
     // update capacity for vehicule v starting from node <start> in route.
@@ -638,42 +632,23 @@ class DARPModelVH {
         }
     }
 
-    static void postPrecedence() {
-        for (int i = 0; i < numRequests; i++) {
-            cp.post(lessOrEqual(servingTime[i], minus(servingTime[numRequests + i],
-                    dist[i][i + numRequests] + servingDuration[i])));
-        }
-        for (int i = 0; i < numVehicles; i++) {
-            cp.post(lessOrEqual(servingTime[getEndDepot(i)],
-                    plus(servingTime[getBeginDepot(i)], timeHorizon)));
-        }
-    }
-
-    static void postRideTime() {
-        for (int i = 0; i < numRequests; i++) {
-            cp.post(lessOrEqual(servingTime[numRequests + i],
-                    plus(servingTime[i], servingDuration[i] + maxRideTime)));
-        }
-    }
-
-    static void postMaxRouteDuration() {
-        for (int i = 0; i < numVehicles; i++) {
-            cp.post(lessOrEqual(servingTime[getEndDepot(i)],
-                    plus(servingTime[getBeginDepot(i)], maxRouteDuration)));
-        }
-    }
-
     static void postConstraints() {
         if (constraintsPosted) {
             return;
         }
         constraintsPosted = true;
+        // same serving vehicle
         for (int i = 0; i < numRequests; i++) {
             cp.post(equal(servingVehicle[i], servingVehicle[i + numRequests]));
         }
-        postPrecedence();
-        postRideTime();
-        //postMaxRouteDuration();
+        // max ride time
+        for (int i = 0; i < numRequests; i++) {
+            cp.post(lessOrEqual(servingTime[numRequests + i], plus(servingTime[i], servingDuration[i] + maxRideTime)));
+        }
+        // max route duration
+        for (int i = 0; i < numVehicles; i++) {
+            cp.post(lessOrEqual(servingTime[getEndDepot(i)], plus(servingTime[getBeginDepot(i)], maxRouteDuration)));
+        }
     }
 
     // returns the minimum duration of route v.
@@ -681,14 +656,29 @@ class DARPModelVH {
         int begin = getBeginDepot(v);
         int end = getEndDepot(v);
         int p = begin;
-        int i = succ[begin].value();
+        int i = bestSolution.succ[begin];
         int rd = 0;
         while (p != end) {
             rd += servingDuration[i] + dist[p][i];
             p = i;
-            i = succ[i].value();
+            i = bestSolution.succ[i];
         }
         return rd;
+    }
+
+    static DARPSolution exportSol() {
+        DARPPath[] paths = new DARPPath[numVehicles];
+        for (int v = 0; v < numVehicles; v++) {
+            paths[v] = new DARPPath(v);
+            int current = getBeginDepot(v);
+            int end = getEndDepot(v);
+            while (current != end) {
+                paths[v].addStep(new DARPStep(current, (int) (bestSolution.minServingTime[current] * 100), (int) (bestSolution.maxServingTime[current] * 100)));
+                current = bestSolution.succ[current];
+            }
+            paths[v].addStep(new DARPStep(end, (int) (bestSolution.minServingTime[end] * 100), (int) (bestSolution.maxServingTime[end] * 100)));
+        }
+        return new DARPSolution(instance, paths);
     }
 
     static void printBestRoutesSolution() {
@@ -742,14 +732,6 @@ class DARPModelVH {
         if (debug) System.out.println(s);
     }
 
-}
-
-class Mut {
-    int value;
-
-    public Mut(int i) {
-        value = i;
-    }
 }
 
     /*
