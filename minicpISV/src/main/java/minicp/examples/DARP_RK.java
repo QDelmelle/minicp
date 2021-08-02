@@ -30,9 +30,8 @@ class DARPModelVH {
     static DFSearch search;
 
     // meta-parameters
-    static int searchTime;
-    static int alpha = 10;
-    static int beta = 1;
+    static int alpha = 1;
+    static int beta = 0;
     static int gamma = 200;
     static int tau = 1000;
     static int maxSize;
@@ -87,7 +86,7 @@ class DARPModelVH {
 
     public static void main(String[] args) {
         cp = makeSolver();
-        String path = "data/DARP/Cordeau/a3-30.txt";
+        String path = "data/DARP/Cordeau/a4-40.txt";
         //path = "data/DARP/Cordeau/a2-5.txt";
         //path = "data/DARP/sample.txt";
         instance = DARPParser.parseInstance(path);
@@ -363,6 +362,7 @@ class DARPModelVH {
             costIncrease = dist[pPrev][pickup] + dist[pickup][pSucc] - dist[pPrev][pSucc] + dist[dPrev][drop] + dist[drop][dSucc] - dist[dPrev][dSucc];
 
         equal(servingVehicle[pickup], vehicle);
+        equal(servingVehicle[drop], vehicle);
         // /!\ insert pickup first
         if (!insertVertexIntoRoute(pickup, pPrev)) {
             printDebug("fail1");
@@ -438,8 +438,8 @@ class DARPModelVH {
                     dMinServingTime = Math.max(getArrivalTime(dPred, drop).min(), servingTime[drop].min());
                     dMaxServingTime = Math.min(servingTime[dSucc].max() - dist[dSucc][drop] - servingDuration[drop], servingTime[drop].max());
                     // check max ride time
-                    if (dMinServingTime - (pMaxServingTime + servingDuration[pickup]) > maxRideTime) done = true;
-                    else if (dMaxServingTime >= dMinServingTime) {
+                    //if (dMinServingTime - (pMaxServingTime + servingDuration[pickup]) > maxRideTime) done = true;
+                    if (dMaxServingTime >= dMinServingTime) {
                         int slack = servingTime[dSucc].max() - servingTime[dPred].min() + servingTime[pSucc].max() - servingTime[pPred].min();
                         int costIncrease = dist[pPred][pickup] + dist[pickup][pSucc] - dist[pPred][pSucc]
                                 + dist[dPred][drop] + dist[drop][dSucc] - dist[dPred][dSucc];
@@ -516,6 +516,48 @@ class DARPModelVH {
         return true;
     }
 
+    // variables && constraints initialization
+
+    static void initCpVars() {
+        for (int i = 0; i < numVars; i++) {
+            if (i < 2 * numRequests) { // i is a site
+                succ[i] = new TrailInt((Trailer) cp.getStateManager(), i);
+                pred[i] = new TrailInt((Trailer) cp.getStateManager(), i);
+            } else {
+                if (isBeginDepot(i)) { // i is a start depot
+                    succ[i] = new TrailInt((Trailer) cp.getStateManager(), getEndDepot(getVehicleOfDepot(i)));
+                    pred[i] = new TrailInt((Trailer) cp.getStateManager(), succ[i].value());
+                    servingVehicle[i].assign(getVehicleOfDepot(i));
+                } else { // i is an end depot
+                    succ[i] = new TrailInt((Trailer) cp.getStateManager(), getBeginDepot(getVehicleOfDepot(i)));
+                    pred[i] = new TrailInt((Trailer) cp.getStateManager(), succ[i].value());
+                    servingVehicle[i].assign(getVehicleOfDepot(i));
+                }
+            }
+            servingTime[i] = makeIntVar(cp, timeWindowStarts[i], timeWindowEnds[i]);
+        }
+    }
+
+    static void postConstraints() {
+        if (constraintsPosted) {
+            return;
+        }
+        constraintsPosted = true;
+        // dependency
+        /*for (int i = 0; i < numRequests; i++) {
+            cp.post(equal(servingVehicle[i], servingVehicle[i + numRequests]));
+        }*/
+        // max ride time
+        for (int i = 0; i < numRequests; i++) {
+            cp.post(lessOrEqual(servingTime[numRequests + i], plus(servingTime[i], servingDuration[i] + maxRideTime)));
+        }
+        // max route duration
+        /*for (int i = 0; i < numVehicles; i++) {
+            cp.post(lessOrEqual(servingTime[getEndDepot(i)], plus(servingTime[getBeginDepot(i)], maxRouteDuration)));
+        }*/
+    }
+
+    // helper methods
     // return the total distance traveled by all vehicles
     static int getDistanceObjective() {
         int length = 0;
@@ -540,8 +582,6 @@ class DARPModelVH {
         return true;
     }
 
-
-    // helper methods
     static int getVehicleOfDepot(int i) {
         if (isBeginDepot(i))
             return i - 2 * numRequests;
@@ -608,47 +648,6 @@ class DARPModelVH {
 
     boolean isCriticalVertex(int vertex) {
         return timeWindowStarts[vertex] > 0 || timeWindowEnds[vertex] < timeHorizon;
-    }
-
-    // variables && constraints initialization
-
-    static void initCpVars() {
-        for (int i = 0; i < numVars; i++) {
-            if (i < 2 * numRequests) { // i is a site
-                succ[i] = new TrailInt((Trailer) cp.getStateManager(), i);
-                pred[i] = new TrailInt((Trailer) cp.getStateManager(), i);
-            } else {
-                if (isBeginDepot(i)) { // i is a start depot
-                    succ[i] = new TrailInt((Trailer) cp.getStateManager(), getEndDepot(getVehicleOfDepot(i)));
-                    pred[i] = new TrailInt((Trailer) cp.getStateManager(), succ[i].value());
-                    servingVehicle[i].assign(getVehicleOfDepot(i));
-                } else { // i is an end depot
-                    succ[i] = new TrailInt((Trailer) cp.getStateManager(), getBeginDepot(getVehicleOfDepot(i)));
-                    pred[i] = new TrailInt((Trailer) cp.getStateManager(), succ[i].value());
-                    servingVehicle[i].assign(getVehicleOfDepot(i));
-                }
-            }
-            servingTime[i] = makeIntVar(cp, timeWindowStarts[i], timeWindowEnds[i]);
-        }
-    }
-
-    static void postConstraints() {
-        if (constraintsPosted) {
-            return;
-        }
-        constraintsPosted = true;
-        // same serving vehicle
-        for (int i = 0; i < numRequests; i++) {
-            cp.post(equal(servingVehicle[i], servingVehicle[i + numRequests]));
-        }
-        // max ride time
-        for (int i = 0; i < numRequests; i++) {
-            cp.post(lessOrEqual(servingTime[numRequests + i], plus(servingTime[i], servingDuration[i] + maxRideTime)));
-        }
-        // max route duration
-        for (int i = 0; i < numVehicles; i++) {
-            cp.post(lessOrEqual(servingTime[getEndDepot(i)], plus(servingTime[getBeginDepot(i)], maxRouteDuration)));
-        }
     }
 
     // returns the minimum duration of route v.
