@@ -5,7 +5,6 @@ import minicp.examples.DARPDataModel.*;
 import java.util.ArrayList;
 
 public class DARPParser {
-    final static int SCALING = 100;
     static int nRequests = 0;
     public static String getNameFromFilePath(String filePath) {
         String[] tmp = filePath.split("\\\\");
@@ -15,83 +14,47 @@ public class DARPParser {
 
     private static DARPStop lineToStop(String[] line) {
         if (line.length != 7) System.out.println("error reading stop: "+line.length);
-        int place = Integer.parseInt(line[0]);
         int load = Integer.parseInt(line[4]);
-        int request = -1;
-        if(load < 0) {
-            request = place - 1 - nRequests;
-        } else if(load > 0){
-            request = nRequests;
-            nRequests ++;
-        }
         return new DARPStop(
-                place,
-                request,
                 Double.parseDouble(line[1]),
                 Double.parseDouble(line[2]),
-                Integer.parseInt(line[3]) * SCALING,
+                Integer.parseInt(line[3]),
                 load,
-                Integer.parseInt(line[5]) * SCALING,
-                Integer.parseInt(line[6]) * SCALING
+                Integer.parseInt(line[5]),
+                Integer.parseInt(line[6])
         );
     }
 
-    public static DARPInstance parseInstance(String filePath) {
+    public static DynamicDARPInstance parseInstance(String filePath) {
         InputReader ir = new InputReader(filePath);
         String[] header = ir.getNextLine();
         assert(header.length == 5);
 
         int nVehicle = Integer.parseInt(header[0]);
-        //nRequests = Integer.parseInt(header[1]); // /!\ Not consistent between instances !!!
-        int maxRouteDuration = Integer.parseInt(header[2]) * SCALING;
+        int nRequests = Integer.parseInt(header[1]);
+        int maxRouteDuration = Integer.parseInt(header[2]);
         int vCapacity = Integer.parseInt(header[3]);
-        int maxRideTime = Integer.parseInt(header[4]) * SCALING; //Max time in vehicle for request (service excluded)
+        int maxRideTime = Integer.parseInt(header[4]); //Max time in vehicle for request (service excluded)
 
-        DARPStop startDepot = lineToStop(ir.getNextLine()); //start depot
-        DARPStop endDepot = startDepot;
+        DynamicDARPInstance ret = new DynamicDARPInstance(getNameFromFilePath(filePath), nVehicle, vCapacity, maxRideTime, maxRouteDuration, 0);
+        String[] depot = ir.getNextLine();
 
-        ArrayList<DARPStop> stoplist = new ArrayList<DARPStop>();
+        DARPStop[] stops = new DARPStop[2*nRequests + 2*nVehicle];
         String[] stopline = ir.getNextLine();
-        int nStop = 0;
+        int i = 0;
         while (stopline != null) {
-            DARPStop stop = lineToStop(stopline);
-            if (stop.load != 0) {
-                stoplist.add(stop);
-                nStop++;
-            } else endDepot = stop;
+            stops[i] = lineToStop(stopline);
             stopline = ir.getNextLine();
-        }
-        DARPStop[] stops = stoplist.toArray(new DARPStop[0]);
-
-        // Generating stop for start end depot per vehicle
-        int nSite = nVehicle*2 + nStop;
-        DARPStop[] sites = new DARPStop[nSite];
-        int i=0;
-        for (; i<nStop; i++) { sites[i] = stops[i]; }
-        for (; i<nStop+nVehicle; i++) { sites[i] = startDepot; }
-        for (; i<nSite; i++) { sites[i] = endDepot; }
-
-        int[][] distances = new int[nSite][nSite];
-        for (i=0; i<nSite; i++){
-            for (int j=0; j<nSite; j++) {
-                double dx = (sites[i].x - sites[j].x) * (sites[i].x - sites[j].x);
-                double dy = (sites[i].y - sites[j].y) * (sites[i].y - sites[j].y);
-                distances[i][j] = (int) Math.round(Math.sqrt(dx + dy) * SCALING);
-            }
+            i++;
         }
 
-        DARPVehicle[] vehicles = new DARPVehicle[nVehicle];
-        for (int v = 0; v<nVehicle; v++) {
-            vehicles[v] = new DARPVehicle(nStop+v, nStop+nVehicle+v, vCapacity);
-        }
-
-        DARPRequest[] requests = new DARPRequest[nRequests];
+        /*
+        */
         for (int r = 0; r<nRequests; r++) {
-            requests[r] = new DARPRequest(r, nRequests+r);
+            ret.addRequest(new DARPRequest(stops[r], stops[r+nRequests]));
         }
 
-        return new DARPInstance(getNameFromFilePath(filePath),
-                vehicles, requests, sites, distances, maxRideTime, maxRouteDuration);
+        return ret;
     }
 }
 

@@ -98,7 +98,10 @@ public class ISVDomain {
 
     public int prevMember(int e) { return pred[e].value(); }
 
-    public boolean canInsert(int e, int p)  { return posPreds[e].contains(p); }
+    public boolean canInsert(int e, int p)  {
+        if (p == -1) return posPreds[e].contains(n);
+        else return posPreds[e].contains(p);
+    }
 
     public void remInsert(int e, int p)  { posPreds[e].remove(p); }
 

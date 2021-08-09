@@ -2,10 +2,8 @@ package minicp.examples;
 
 import java.util.*;
 
-class DARPDataModel{
-    static class DARPStop{
-        int place;
-        int request;
+class DARPDataModel {
+    static class DARPStop {
         double x;
         double y;
         int service;
@@ -13,152 +11,192 @@ class DARPDataModel{
         int winStart;
         int winEnd;
 
-        public DARPStop(int p, int r, double x, double y, int s, int l, int ws, int we){
-            place = p; request = r; this.x = x; this.y = y; service = s; load = l;
-            winStart = ws; winEnd = we;
+        public DARPStop(double x, double y, int service, int load, int winStart, int winEnd) {
+            this.x = x;
+            this.y = y;
+            this.service = service;
+            this.load = load;
+            this.winStart = winStart;
+            this.winEnd = winEnd;
         }
 
-        boolean isDepot() { return load == 0; }
+        boolean isDepot() {
+            return load == 0;
+        }
 
-        boolean isStop() { return !isDepot(); }
+        boolean isStop() {
+            return !isDepot();
+        }
 
-        boolean isPickup() { return load > 0; }
+        boolean isPickup() {
+            return load > 0;
+        }
 
-        boolean isDrop() { return !isPickup(); }
+        boolean isDrop() {
+            return !isPickup();
+        }
+
+        public String toString() {
+            return "(" + x + ", " + y + ", " + service + ", " + load + ", [" + winStart + ", " + winEnd + "])";
+        }
     }
 
     static class DARPRequest {
-        int pickup;
-        int drop;
+        DARPStop pickup;
+        DARPStop drop;
 
-        public DARPRequest(int p, int d){
-            pickup = p; drop = d;
+        public DARPRequest(DARPStop p, DARPStop d) {
+            pickup = p;
+            drop = d;
+        }
+
+        public String toString() {
+            return pickup.toString() + " ---> " + drop.toString();
         }
     }
 
-    static class DARPVehicle {
-        int start;
-        int end;
-        int capacity;
-        public DARPVehicle(int s, int e, int c){
-            start = s; end = e; capacity = c;
-        }
-    }
-
-    static class DARPInstance{
+    static class DARPInstance {
         String name;
-        DARPVehicle[] vehicles;
-        DARPRequest[] requests;
-        DARPStop[] sites;
-        int[][] distances;
-        int nSites;
+        ArrayList<DARPRequest> requests;
         int nVehicles;
-        int nRequests;
+        int vCapacity;
         int maxRideTime;
         int maxDuration;
-        public DARPInstance(String name, DARPVehicle[] vehicles, DARPRequest[] requests,
-                            DARPStop[] sites, int[][] distances, int maxRideTime, int maxDuration){
-            this.name = name; this.vehicles = vehicles; this.requests = requests;
-            this.sites = sites; this.distances = distances;
-            nSites = sites.length;
-            nVehicles = vehicles.length;
-            nRequests = requests.length;
+        int startTime;
+        int timeHorizon;
+
+        public DARPInstance(String name, int nVehicles, int vCapacity, int maxRideTime, int maxDuration) {
+            this.name = name;
+            this.nVehicles = nVehicles;
+            this.vCapacity = vCapacity;
             this.maxRideTime = maxRideTime;
             this.maxDuration = maxDuration;
+            startTime = 0;
+            timeHorizon = 0;
+            requests = new ArrayList<DARPRequest>();
         }
-        int minTravelTime(int request) {
-            int pickup = requests[request].pickup;
-            int drop = requests[request].drop;
-            return sites[pickup].service + distances[pickup][drop] + sites[drop].service;
+
+        public void addRequest(DARPRequest r) {
+            requests.add(r);
+            timeHorizon = Math.max(timeHorizon, r.drop.winEnd);
+        }
+
+        public int nRequests() {
+            return requests.size();
+        }
+
+        public int nSites() {
+            return nRequests() * 2 + nVehicles * 2;
+        }
+
+        public DARPStop[] getSites() {
+            int n = nSites();
+            DARPStop[] sites = new DARPStop[n];
+            for (int i = 0; i < nRequests(); i++) {
+                sites[i] = requests.get(i).pickup;
+                sites[i + nRequests()] = requests.get(i).drop;
+            }
+            for (int v = 0; v < nVehicles; v++) {
+                sites[2 * nRequests() + v] = new DARPStop(0.0, 0.0, 0, 0, 0, timeHorizon);
+                sites[n - nVehicles + v] = new DARPStop(0.0, 0.0, 0, 0, 0, timeHorizon);
+            }
+            return sites;
+        }
+
+        public int[][] getDistances(DARPStop[] sites, int SCALING) {
+            int n = sites.length;
+            int[][] ret = new int[n][n];
+            for (int i = 0; i < n; i++) {
+                for (int j = 0; j < n; j++) {
+                    double dx = (sites[i].x - sites[j].x) * (sites[i].x - sites[j].x);
+                    double dy = (sites[i].y - sites[j].y) * (sites[i].y - sites[j].y);
+                    ret[i][j] = (int) (Math.round(Math.sqrt(dx + dy) * SCALING));
+                }
+            }
+            return ret;
         }
     }
 
-    static class DARPStep{
+    /**
+     * an instance where vehicles don't necessarily start at the depot, each one has a route in progress.
+     */
+    static class DynamicDARPInstance extends DARPInstance {
+        DARPPath[] paths; // the sites each vehicle has already visited, the last one being its current objective.
+
+        public DynamicDARPInstance(String name, int nVehicles, int vCapacity, int maxRideTime, int maxDuration, int startTime) {
+            super(name, nVehicles, vCapacity, maxRideTime, maxDuration);
+            this.startTime = startTime;
+            paths = new DARPPath[nVehicles];
+            for (int i = 0; i < nVehicles; i++) paths[i] = new DARPPath(i);
+        }
+
+        void addStep(int vehicle, DARPStep s) {
+            paths[vehicle].addStep(s);
+        }
+
+        public DynamicDARPInstance copy() {
+            DynamicDARPInstance ret = new DynamicDARPInstance(this.name, this.nVehicles, this.vCapacity, this.maxRideTime, this.maxDuration, this.startTime);
+            for (DARPRequest r : requests) ret.addRequest(r);
+            return ret;
+        }
+    }
+
+    static class DARPStep {
         int stop;
         int starttime;
         int endtime;
-        public DARPStep(int stop, int st, int et){
-            this.stop = stop; starttime = st; endtime = et;
+
+        public DARPStep(int stop, int st, int et) {
+            this.stop = stop;
+            starttime = st;
+            endtime = et;
         }
-        boolean isTimeFixed(){ return starttime == endtime; }
+
+        boolean isTimeFixed() {
+            return starttime == endtime;
+        }
     }
 
-    static class DARPPath{
+    static class DARPPath {
         int vehicle;
         List<DARPStep> steps;
         int len;
-        public DARPPath(int v){
-            vehicle = v; steps = new ArrayList<DARPStep>(); len = 0;
+
+        public DARPPath(int v) {
+            vehicle = v;
+            steps = new ArrayList<DARPStep>();
+            len = 0;
         }
-        public void addStep(DARPStep s){
-            steps.add(s);len++;
+
+        public void addStep(DARPStep s) {
+            steps.add(s);
+            len++;
         }
     }
 
-    static class DARPSolution{
-        DARPInstance instance;
-        DARPPath[] paths;
-        public DARPSolution(DARPInstance i, DARPPath[] p){
-            instance = i; paths = p;
-        }
-        /**
-         * @return true iif this is a valid solution to the instance and respects all the constraints.
-         */
-        public boolean isValid(){
-            int[] g = new int[instance.nSites];
-            int[] vehicle = new int[instance.nSites];
-            DARPStep[] stops = new DARPStep[instance.nSites];
-            int i = 0;
-            for(int v=0;v<paths.length;v++){
-                for(DARPStep step : paths[v].steps){
-                    stops[step.stop] = step;
-                    if (step.starttime < instance.sites[step.stop].winStart || step.endtime > instance.sites[step.stop].winEnd){
-                        System.out.println("time window violated for site "+step.stop);
-                        return false;
-                    }
-                    g[step.stop] = i;
-                    vehicle[step.stop] = v;
-                    i++;
-                }
-                if (paths[v].steps.get(paths[v].len-1).starttime - paths[v].steps.get(0).endtime > instance.maxDuration){
-                    System.out.println("max route duration violated for vehicle "+v);
-                    return false;
-                }
-            }
-            if (i != instance.nSites){
-                System.out.println("some sites are not visited");
-                return false;
-            }
-            for(int r=0;r<instance.nRequests;r++){
-                if (vehicle[r] != vehicle[r + instance.nRequests]){
-                    System.out.println("request "+r+" is served by 2 vehicles!");
-                    return false;
-                }
-                if (g[r] > g[r+instance.nRequests]) {
-                    System.out.println("request "+r+" is not visited in the right order!");
-                    return false;
-                }
-                if (stops[r+instance.nRequests].starttime - stops[r].endtime - instance.sites[r].service > instance.maxRideTime){
-                    System.out.println("max ride time violated for request "+r);
-                    return false;
-                }
-            }
-            return true;
-        }
-    }
-
-    static class DarpSol {
-        int[] succ;
-        int[] pred;
-        int[] servingVehicle;
+    static class DARPSolution {
         double cost;
-        double[] minServingTime;
-        double[] maxServingTime;
+        DARPPath[] paths;
 
-        public DarpSol(int[] succ, int[] pred, int[] servingV, double c, double[] minServingTime, double[] maxServingTime) {
-            this.succ = succ; this.pred = pred; servingVehicle = servingV; cost = c;
-            this.minServingTime = minServingTime;
-            this.maxServingTime = maxServingTime;
+        public DARPSolution(DARPPath[] paths, double cost) {
+            this.paths = paths; this.cost = cost;
+        }
+
+        public boolean isEmpty() {
+            return paths[0].len == 0;
+        }
+
+        public String toString() {
+            String ret = "";
+            for (int v = 0; v < paths.length; v++) {
+                ret += "vehicle " + v + ": ";
+                for (DARPStep s : paths[v].steps) {
+                    ret += s.stop + "["+s.starttime+", "+s.endtime+"], ";
+                }
+                ret += "\n";
+            }
+            ret += "cost = "+cost;
+            return ret;
         }
     }
 }
