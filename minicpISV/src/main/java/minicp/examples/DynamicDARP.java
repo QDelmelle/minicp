@@ -737,7 +737,7 @@ class DynamicDARP {
             }
             paths[v].addStep(new DARPStep(end, (int) ((double) servingTime[end].min() / SCALING), (int) ((double) servingTime[end].max() / SCALING)));
         }
-        return new DARPSolution(paths, cost / SCALING);
+        return new DARPSolution(paths, cost / SCALING, totalNumFails);
     }
 
     static DARPSolution emptySol() {
@@ -745,7 +745,7 @@ class DynamicDARP {
         for (int v = 0; v < numVehicles; v++) {
             paths[v] = new DARPPath(v);
         }
-        return new DARPSolution(paths, Double.MAX_VALUE);
+        return new DARPSolution(paths, Double.MAX_VALUE, totalNumFails);
     }
 
     private static void printInsertionPoints(int[][] points) {

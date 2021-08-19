@@ -7,10 +7,46 @@ import java.util.Random;
 public class DARPtest {
 
     public static void main(String[] args) {
-        int runtime = 15;
-        DARPInstance instance = DARPParser.parseInstance("data/DARP/Cordeau/b5-60.txt");
-        slackTest(instance, runtime, 10, 1, 0, false);
-        slackTest(instance, runtime, 10, 1, 0, true);
+        int runtime = 10;
+        int k = 15;
+        DARPInstance instance = DARPParser.parseInstance("data/DARP/Cordeau/b6-48.txt");
+        //slackTest(instance, runtime, 15, 30, 1, true);
+        perfTest(instance, runtime, k, 1, 0);
+    }
+
+    private static void perfTest(DARPInstance instance, int runtime, int k, int alpha, int beta) {
+        System.out.println("Running perf test for instance "+instance.name+" with alpha="+alpha+", beta="+beta+", mean of "+k+" runs.");
+        double meanCostSeqvar = 0;
+        double failsISV = 0;
+        double meanCostNoSeqvar = 0;
+        double failsNoISV = 0;
+        for (int i=0; i<k; i++) {
+            System.out.println("run "+(i+1)+", seqvar:");
+            DARPSolution sol = DARP_LNSFFPA_Seqvar.run(instance, runtime, alpha, beta);
+            if (!isSolValid(instance, sol)) {
+                System.out.println("illegal solution!");
+                System.out.println(sol);
+                return;
+            }
+            meanCostSeqvar += sol.cost;
+            failsISV += sol.fails;
+            System.out.println("run "+(i+1)+", no seqvar:");
+            sol = DARPModelVH.run(instance, runtime, alpha, beta);
+            if (!isSolValid(instance, sol)) {
+                System.out.println("illegal solution!");
+                System.out.println(sol);
+                return;
+            }
+            meanCostNoSeqvar += sol.cost;
+            failsNoISV += sol.fails;
+        }
+        meanCostSeqvar /= k;
+        meanCostNoSeqvar /= k;
+        failsISV /= k;
+        failsNoISV /= k;
+        System.out.println("Perf test done for instance "+instance.name+" with alpha="+alpha+", beta="+beta+", mean of "+k+" runs.");
+        System.out.println("mean cost with seqvar ="+meanCostSeqvar+", fails: "+failsISV);
+        System.out.println("mean cost without seqvar ="+meanCostNoSeqvar+", fails: "+failsNoISV);
     }
 
     private static void slackTest(DARPInstance instance, int runtime, int k, int alpha, int beta, boolean seqvar) {
@@ -170,10 +206,10 @@ public class DARPtest {
                 }
                 load += sites[step.stop].load;
                 if (load < 0) {
-                    System.out.println("negative load in vehicle" + v+" at stop "+step.stop);
+                    System.out.println("negative load in vehicle " + v+" at stop "+step.stop);
                     return false;
                 } else if (load > instance.vCapacity) {
-                    System.out.println("overload in vehicle" + v+" at stop "+step.stop);
+                    System.out.println("overload in vehicle " + v+" at stop "+step.stop);
                     return false;
                 }
                 g[step.stop] = i;

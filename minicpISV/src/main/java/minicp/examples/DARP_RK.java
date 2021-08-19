@@ -1,5 +1,6 @@
 package minicp.examples;
 
+import com.sun.net.httpserver.Authenticator;
 import minicp.engine.constraints.Equal;
 import minicp.engine.constraints.LessOrEqual;
 import minicp.engine.core.*;
@@ -129,7 +130,7 @@ class DARPModelVH {
 
         // Variables and structures related to modelling
         servingTime = new IntVar[numVars];
-        servingVehicle = makeIntVarArray(cp, numVars, 0, numVehicles);
+        servingVehicle = makeIntVarArray(cp, numVars, 0, numVehicles - 1);
         succ = new StateInt[numVars];
         pred = new StateInt[numVars];
         capacityLeftInRoute = new StateInt[numVars];
@@ -145,7 +146,7 @@ class DARPModelVH {
 
         // search algorithm
         search = makeDfs(cp, () -> {
-            printDebug(""+exportSol(0));
+            printDebug("" + exportSol(0));
             if (customersLeft.isEmpty()) return EMPTY;
             else {
                 int request = getUnassignedRequest();
@@ -263,6 +264,7 @@ class DARPModelVH {
             insertionObjChange[r] = new HashMap<Integer, HashMap<Integer, HashMap<Integer, Integer>>>();
             for (int v = 0; v < numVehicles; v++) {
                 setInsertionCost(r, v);
+                if (!insertionObjChange[r].containsKey(v)) servingVehicle[r].remove(v);
             }
         }
         int minVehicles = numVehicles + 1;
@@ -283,6 +285,7 @@ class DARPModelVH {
         int[] numInsertions = new int[numRequests];
         for (int r : minRoutesRequests) {
             int[][] iP = getInsertionPoints(r);
+            if (iP.length == 0) System.out.println(minVehicles);
             bestInsertionCost[r] = iP[0][3];
             numInsertions[r] = iP.length;
             minChoices = Math.min(minChoices, iP.length);
@@ -351,18 +354,13 @@ class DARPModelVH {
         customersLeft.remove(request);
         // recompute the insertions of all remaining unassigned requests for this vehicle
         // and check consistency.
-        /*
         for (int r : customersLeft.toArray()) {
             if (insertionObjChange[r].containsKey(vehicle)) {
                 insertionObjChange[r].remove(vehicle);
                 setInsertionCost(r, vehicle);
-                int[][] iP = getInsertionPoints(r);
-                if (iP.length == 0) {
-                    printDebug("fail4");
-                    throw new InconsistencyException();
-                }
+                if (!insertionObjChange[r].containsKey(vehicle)) servingVehicle[r].remove(vehicle);
             }
-        }*/
+        }
     }
 
     // insert i after j in route v.
@@ -395,7 +393,7 @@ class DARPModelVH {
                     continue;
                 }
                 // drop inserted just after pickup
-                int dMinServingTime = Math.max(getArrivalTime(pickup, drop).min(), servingTime[drop].min());
+                int dMinServingTime = Math.max(pMinServingTime + servingDuration[pickup] + dist[pickup][drop], servingTime[drop].min());
                 int dMaxServingTime = Math.min(servingTime[pSucc].max() - dist[pSucc][drop] - servingDuration[drop], servingTime[drop].max());
                 if (dMaxServingTime >= dMinServingTime) {
                     int slack = dMaxServingTime - servingTime[pPred].min() - dist[pPred][pickup] - servingDuration[pPred] - dist[pickup][pSucc] - servingDuration[pickup]
@@ -460,9 +458,9 @@ class DARPModelVH {
         int begin = getBeginDepot(v);
         int end = getEndDepot(v);
         int index = succ[begin].value();
-        System.out.println("capa left in route "+v+":");
+        System.out.println("capa left in route " + v + ":");
         while (index != end) {
-            System.out.print(capacityLeftInRoute[index].value()+", ");
+            System.out.print(capacityLeftInRoute[index].value() + ", ");
             index = succ[index].value();
         }
         System.out.print("\n");
@@ -660,7 +658,7 @@ class DARPModelVH {
             }
             paths[v].addStep(new DARPStep(end, (int) ((double) servingTime[end].min() / SCALING), (int) ((double) servingTime[end].max() / SCALING)));
         }
-        return new DARPSolution(paths, cost / SCALING);
+        return new DARPSolution(paths, cost / SCALING, totalNumFails);
     }
 
     static void printsequence(int v) {
@@ -686,42 +684,3 @@ class DARPModelVH {
     }
 
 }
-/*
-
-    def exportBestSol: DARPSolution = exportSol(bestSolution.get)
-
-
-    static BranchingChoice getBestBranchingDecision(int request) {
-        ArrayList<BranchingChoice> branchingQueue = new ArrayList<BranchingChoice>();
-        int cvv = getCriticalVertex(request);
-        int ncv = getCorrespondingVertex(cvv);
-        int bestCvi = -1;
-        int bestNcvi = -1;
-        int bestChange = Integer.MIN_VALUE;
-        for (int v=0;v<numVehicles;v++) {
-            if (insertionObjChange[request].containsKey(v) && servingVehicle[request].contains(v)) {
-                for (int cvi : insertionObjChange[request].get(v).keySet()) {
-                    for (int ncvi : insertionObjChange[request].get(v).get(cvi).keySet()) {
-                        if (insertionObjChange[request].get(v).get(cvi).get(ncvi) > bestChange) {
-                            bestChange = insertionObjChange[request].get(v).get(cvi).get(ncvi);
-                            bestCvi = cvi;
-                            bestNcvi = ncvi;
-                            branchingQueue.clear();
-                            branchingQueue.add(new BranchingChoice(request, cvi, ncvi, bestChange,
-                                    servingVehicle[cvi].min()));
-                        }
-                        else if (insertionObjChange[request].get(v).get(cvi).get(ncvi) == bestChange) {
-                            branchingQueue.add(new BranchingChoice(request, cvi, ncvi, bestChange,
-                                    servingVehicle[cvi].min()));
-                        }
-                    }
-                }
-            }
-        }
-        BranchingChoice[] bQueue = branchingQueue.toArray(new BranchingChoice[0]);
-        Random rn = new Random();
-        return bQueue[rn.nextInt(bQueue.length)];
-    }
-
-}
-*/

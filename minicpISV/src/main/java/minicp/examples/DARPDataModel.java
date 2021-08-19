@@ -175,11 +175,12 @@ class DARPDataModel {
     }
 
     static class DARPSolution {
+        public double fails;
         double cost;
         DARPPath[] paths;
 
-        public DARPSolution(DARPPath[] paths, double cost) {
-            this.paths = paths; this.cost = cost;
+        public DARPSolution(DARPPath[] paths, double cost, double fails) {
+            this.paths = paths; this.cost = cost; this.fails = fails;
         }
 
         public boolean isEmpty() {
