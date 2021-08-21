@@ -395,13 +395,10 @@ class DARP_LNSFFPA_Seqvar {
         int pPred = begin;
         while (pPred != end) {
             int pSucc = route[v].nextMember(pPred);
-            if (route[v].canInsert(pickup, pPred) && capacityLeftInRoute[pPred].value() >= load[pickup]) {
-                int pMinServingTime = Math.max(getArrivalTime(pPred, pickup).min(), servingTime[pickup].min());
-                int pMaxServingTime = Math.min(servingTime[pSucc].max() - dist[pickup][pSucc] - servingDuration[pickup], servingTime[pickup].max());
-                if (pMaxServingTime < pMinServingTime) {
-                    pPred = pSucc;
-                    continue;
-                }
+            int pMinServingTime = Math.max(getArrivalTime(pPred, pickup).min(), servingTime[pickup].min());
+            int pMaxServingTime = Math.min(servingTime[pSucc].max() - dist[pickup][pSucc] - servingDuration[pickup], servingTime[pickup].max());
+            if (pMaxServingTime >= pMinServingTime && capacityLeftInRoute[pPred].value() >= load[pickup]) {
+
                 // drop inserted just after pickup
                 int dMinServingTime = Math.max(pMinServingTime + servingDuration[pickup] + dist[pickup][drop], servingTime[drop].min());
                 int dMaxServingTime = Math.min(servingTime[pSucc].max() - dist[pSucc][drop] - servingDuration[drop], servingTime[drop].max());
@@ -413,10 +410,11 @@ class DARP_LNSFFPA_Seqvar {
                 }
 
                 int dPred = pSucc; // drop inserted further
-                boolean done = false;
-                while (dPred != end && capacityLeftInRoute[dPred].value() >= load[pickup] && !done) {
+                while (dPred != end && capacityLeftInRoute[dPred].value() >= load[pickup]) {
                     int dSucc = route[v].nextMember(dPred);
-                    if (route[v].canInsert(drop, dPred)) {
+                    dMinServingTime = Math.max(getArrivalTime(dPred, drop).min(), servingTime[drop].min());
+                    dMaxServingTime = Math.min(servingTime[dSucc].max() - dist[dSucc][drop] - servingDuration[drop], servingTime[drop].max());
+                    if (dMaxServingTime >= dMinServingTime) {
                         int slack = servingTime[pSucc].max() - servingTime[pPred].min() - dist[pPred][pickup] - servingDuration[pPred] - dist[pickup][pSucc] - servingDuration[pickup]
                                 + servingTime[dSucc].max() - servingTime[dPred].min() - dist[dPred][drop] - servingDuration[dPred] - dist[drop][dSucc] - servingDuration[drop];
                         int costIncrease = dist[pPred][pickup] + dist[pickup][pSucc] - dist[pPred][pSucc]
@@ -548,15 +546,15 @@ class DARP_LNSFFPA_Seqvar {
 
     // returns the current length of route v.
     static int getRouteLength(int v) {
-        int rd = 0;
+        int length = 0;
         int begin = getBeginDepot(v);
         int end = getEndDepot(v);
         int i = begin;
         while (i != end) {
-            rd += dist[i][route[v].nextMember(i)];
+            length += dist[i][route[v].nextMember(i)];
             i = route[v].nextMember(i);
         }
-        return rd;
+        return length;
     }
 
     static boolean isPositive(StateInt[] array) {

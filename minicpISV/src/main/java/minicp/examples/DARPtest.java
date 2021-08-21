@@ -7,9 +7,9 @@ import java.util.Random;
 public class DARPtest {
 
     public static void main(String[] args) {
-        int runtime = 10;
-        int k = 1;
-        DARPInstance instance = DARPParser.parseInstance("data/DARP/Cordeau/b5-50.txt");
+        int runtime = 20;
+        int k = 15;
+        DARPInstance instance = DARPParser.parseInstance("data/DARP/Cordeau/b3-24.txt");
         //slackTest(instance, runtime, 15, 30, 1, true);
         perfTest(instance, runtime, k, 1, 0);
     }

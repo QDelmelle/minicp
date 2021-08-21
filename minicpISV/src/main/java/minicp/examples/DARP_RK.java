@@ -385,13 +385,9 @@ class DARPModelVH {
         int pPred = begin;
         while (pPred != end) {
             int pSucc = succ[pPred].value();
-            if (capacityLeftInRoute[pPred].value() >= load[pickup]) {
-                int pMinServingTime = Math.max(getArrivalTime(pPred, pickup).min(), servingTime[pickup].min());
-                int pMaxServingTime = Math.min(servingTime[pSucc].max() - dist[pickup][pSucc] - servingDuration[pickup], servingTime[pickup].max());
-                if (pMaxServingTime < pMinServingTime) {
-                    pPred = pSucc;
-                    continue;
-                }
+            int pMinServingTime = Math.max(getArrivalTime(pPred, pickup).min(), servingTime[pickup].min());
+            int pMaxServingTime = Math.min(servingTime[pSucc].max() - dist[pickup][pSucc] - servingDuration[pickup], servingTime[pickup].max());
+            if (pMaxServingTime >= pMinServingTime && capacityLeftInRoute[pPred].value() >= load[pickup]) {
                 // drop inserted just after pickup
                 int dMinServingTime = Math.max(pMinServingTime + servingDuration[pickup] + dist[pickup][drop], servingTime[drop].min());
                 int dMaxServingTime = Math.min(servingTime[pSucc].max() - dist[pSucc][drop] - servingDuration[drop], servingTime[drop].max());
@@ -403,13 +399,10 @@ class DARPModelVH {
                 }
 
                 int dPred = pSucc; // drop inserted further
-                boolean done = false;
-                while (dPred != end && capacityLeftInRoute[dPred].value() >= load[pickup] && !done) {
+                while (dPred != end && capacityLeftInRoute[dPred].value() >= load[pickup]) {
                     int dSucc = succ[dPred].value();
                     dMinServingTime = Math.max(getArrivalTime(dPred, drop).min(), servingTime[drop].min());
                     dMaxServingTime = Math.min(servingTime[dSucc].max() - dist[dSucc][drop] - servingDuration[drop], servingTime[drop].max());
-                    // check max ride time
-                    //if (dMinServingTime - (pMaxServingTime + servingDuration[pickup]) > maxRideTime) done = true;
                     if (dMaxServingTime >= dMinServingTime) {
                         int slack = servingTime[pSucc].max() - servingTime[pPred].min() - dist[pPred][pickup] - servingDuration[pPred] - dist[pickup][pSucc] - servingDuration[pickup]
                                 + servingTime[dSucc].max() - servingTime[dPred].min() - dist[dPred][drop] - servingDuration[dPred] - dist[drop][dSucc] - servingDuration[drop];
