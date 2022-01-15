@@ -12,43 +12,54 @@ import java.util.List;
 
 /**
  * an object representing the domain of the ISV.
+ *
+ *  @author Quentin Delmelle qdelmelle@gmail.com
  */
 public class ISVDomain {
     private int n;
     private StateInt[] succ;
     private StateInt[] pred;
-    private StateSparseSet elems;
-    private StateInt[] elemPos;
+    private int[] elems;
+    private int[] elemPos;
     private StateInt r, p;
     private StateSparseSet[] posPreds;
 
-    public ISVDomain(StateManager sm, int n){
+    public ISVDomain(StateManager sm, int n) {
         this.n = n;
-        succ = new StateInt[n+1];
-        pred = new StateInt[n+1];
-        for (int i = 0; i <= n; i++){
+        succ = new StateInt[n + 1];
+        pred = new StateInt[n + 1];
+        for (int i = 0; i <= n; i++) {
             succ[i] = sm.makeStateInt(i);
             pred[i] = sm.makeStateInt(i);
         }
-        elemPos = new StateInt[n];
-        for (int i = 0; i < n; i++){
-            elemPos[i] = sm.makeStateInt(i);
+        elems = new int[n];
+        for (int i = 0; i < n; i++) {
+            elems[i] = i;
         }
-        elems = new StateSparseSet(sm, n, 0);
+        elemPos = new int[n];
+        for (int i = 0; i < n; i++) {
+            elemPos[i] = i;
+        }
         r = sm.makeStateInt(0);
         p = sm.makeStateInt(n);
         posPreds = new StateSparseSet[n];
-        for (int i = 0; i < n; i++){
-            posPreds[i] = new StateSparseSet(sm, n+1, 0);
+        for (int i = 0; i < n; i++) {
+            posPreds[i] = new StateSparseSet(sm, n + 1, 0);
             posPreds[i].remove(i); // can't insert i after i
         }
     }
 
-    public boolean isBound() { return r.value()==p.value(); }
+    public boolean isBound() {
+        return r.value() == p.value();
+    }
 
-    public boolean isEmpty() { return !isMember(n); }
+    public boolean isEmpty() {
+        return !isMember(n);
+    }
 
-    public boolean isMember(int e) { return nextMember(e) != e; }
+    public boolean isMember(int e) {
+        return nextMember(e) != e;
+    }
 
     public String allMembers() {
         StringBuilder b = new StringBuilder();
@@ -56,7 +67,7 @@ public class ISVDomain {
         int current = n;
         boolean ok = true;
         if (!isMember(current)) ok = false;
-        while(ok){
+        while (ok) {
             if (current == n) b.append("$");
             else b.append(" " + current);
             current = succ[current].value();
@@ -66,11 +77,11 @@ public class ISVDomain {
         return b.toString();
     }
 
-    public String allCurrentInserts()  {
+    public String allCurrentInserts() {
         StringBuilder b = new StringBuilder();
         b.append("[");
-        for (int e = 0; e < n; e++){
-            for(int p : posPreds[e].toArray()){
+        for (int e = 0; e < n; e++) {
+            for (int p : posPreds[e].toArray()) {
                 if (isMember(p) || p == n) { // we can always insert after n = $
                     if (p == n) b.append("(" + e + ", $), ");
                     else b.append("(" + e + ", " + p + "), ");
@@ -81,29 +92,35 @@ public class ISVDomain {
         return b.toString();
     }
 
-    public String allInserts()  {
+    public String allInserts() {
         StringBuilder b = new StringBuilder();
         b.append("[");
-        for (int e = 0; e < n; e++){
-            for(int p : posPreds[e].toArray()){
-                if (p == n) b.append( "("+e+", $), ");
-                else b.append( "("+e+", "+p+"), ");
+        for (int e = 0; e < n; e++) {
+            for (int p : posPreds[e].toArray()) {
+                if (p == n) b.append("(" + e + ", $), ");
+                else b.append("(" + e + ", " + p + "), ");
             }
         }
         b.append("]");
         return b.toString();
     }
 
-    public int nextMember(int e)  { return succ[e].value(); }
+    public int nextMember(int e) {
+        return succ[e].value();
+    }
 
-    public int prevMember(int e) { return pred[e].value(); }
+    public int prevMember(int e) {
+        return pred[e].value();
+    }
 
-    public boolean canInsert(int e, int p)  {
+    public boolean canInsert(int e, int p) {
         if (p == -1) return posPreds[e].contains(n);
         else return posPreds[e].contains(p);
     }
 
-    public void remInsert(int e, int p)  { posPreds[e].remove(p); }
+    public void remInsert(int e, int p) {
+        posPreds[e].remove(p);
+    }
 
     public void insert(int e, int p) {
         if (p < 0) p = n;
@@ -115,59 +132,78 @@ public class ISVDomain {
             pred[succ[e].value()].setValue(e);
             pred[e].setValue(p);
             succ[p].setValue(e);
-            int x = elems.get(r.value());
-            if (x != e) {
-                elems.exchangeFromIndex(r.value(), elemPos[e].value());
-                elemPos[x].setValue(elemPos[e].value());
-                elemPos[e].setValue(r.value());
-            }
-            r.increment();
+
+            require(e);
         } else throw new InconsistencyException();
     }
 
     public void require(int e) { // ?
-        if (getStatus(e) == 2) throw new InconsistencyException();
-        if (getStatus(e) == 0) return;
-        int x = elems.get(r.value());
-        if (x != e) {
-            elems.exchangeFromIndex(r.value(), elemPos[e].value());
-            elemPos[x].setValue(elemPos[e].value());
-            elemPos[e].setValue(r.value());
-        }
+        if (isExcluded(e)) throw new InconsistencyException();
+        if (isRequired(e)) return;
+
+        swap(e, elems[r.value()]);
         r.increment();
+        if (!isRequired(e)) {
+            //System.out.println("require foire");
+            //printDomain();
+            throw new InconsistencyException();
+        }
     }
 
     public void exclude(int e) {
-        if (getStatus(e) == 0) throw new InconsistencyException();
-        if (getStatus(e) == 2) return;
+        if (isRequired(e)) throw new InconsistencyException();
+        if (isExcluded(e)) return;
 
-        int x = elems.get(p.value()-1);
-        int pos = elemPos[e].value();
-        elems.remove(e);
-        elemPos[x].setValue(pos);
-        elemPos[e].setValue(p.value()-1);
+        swap(e, elems[p.value() - 1]);
         p.decrement();
 
         posPreds[e].removeAll();
-        for (int i=0; i<n; i++){
+        for (int i = 0; i < n; i++) {
             remInsert(i, e);
         }
     }
 
-    public int getStatus(int e) {
-        if (elemPos[e].value() < r.value()){
-            return 0;
-        } else if (elemPos[e].value() >= p.value()){
-            return 2;
-        } else return 1;
+    // swap the positions of a and b in elems, update elemPos accordingly.
+    private void swap(int a, int b) {
+        if (a == b) return;
+        int posa = elemPos[a];
+        int posb = elemPos[b];
+        elems[posa] = b;
+        elems[posb] = a;
+        elemPos[a] = posb;
+        elemPos[b] = posa;
+    }
+
+    // return true e is in R
+    public boolean isRequired(int e) {
+        return elemPos[e] < r.value();
+    }
+
+    // return true e is in E
+    public boolean isExcluded(int e) {
+        return elemPos[e] >= p.value();
     }
 
     public List<Integer> getInserts(int e) {
         List<Integer> ret = new ArrayList<Integer>();
-        for (int p: posPreds[e].toArray()) {
-            if (isMember(p) || p==n) ret.add(p);
+        for (int p : posPreds[e].toArray()) {
+            if (isMember(p) || p == n) ret.add(p);
         }
         return ret;
+    }
+
+    private void printDomain() {
+        System.out.println("r,p = " + r.value() + ", " + p.value());
+        System.out.println("elems = ");
+        for (int i = 0; i < n; i++) {
+            System.out.print(elems[i] + ", ");
+        }
+        System.out.println("");
+        System.out.println("elemPos = ");
+        for (int i = 0; i < n; i++) {
+            System.out.print(elemPos[i] + ", ");
+        }
+        System.out.println("");
     }
 
     public int size() {

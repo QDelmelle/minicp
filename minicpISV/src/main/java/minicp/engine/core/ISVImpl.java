@@ -7,6 +7,10 @@ import minicp.cp.Factory;
 
 import java.util.List;
 
+/**
+ * @author Quentin Delmelle qdelmelle@gmail.com
+ */
+
 public class ISVImpl implements InsertionSequenceVar {
 
     private Solver cp;
@@ -17,8 +21,9 @@ public class ISVImpl implements InsertionSequenceVar {
     private StateStack<Constraint> onInsert;
     private StateStack<Constraint> onIChange;
 
-    public ISVImpl(Solver cp, int n){
-        this.cp = cp; this.n = n;
+    public ISVImpl(Solver cp, int n) {
+        this.cp = cp;
+        this.n = n;
         dom = new ISVDomain(cp.getStateManager(), n);
         onIChange = new StateStack<>(cp.getStateManager());
         onInsert = new StateStack<>(cp.getStateManager());
@@ -26,25 +31,41 @@ public class ISVImpl implements InsertionSequenceVar {
     }
 
     @Override
-    public void propagateOnExclude(Constraint c) { onExclude.push(c);}
+    public void propagateOnExclude(Constraint c) {
+        onExclude.push(c);
+    }
 
     @Override
-    public void propagateOnInsert(Constraint c) { onInsert.push(c);}
+    public void propagateOnInsert(Constraint c) {
+        onInsert.push(c);
+    }
 
     @Override
-    public void propagateOnIChange(Constraint c) { onIChange.push(c);}
+    public void propagateOnIChange(Constraint c) {
+        onIChange.push(c);
+    }
 
     protected void scheduleAll(StateStack<Constraint> constraints) {
         for (int i = 0; i < constraints.size(); i++)
             cp.schedule(constraints.get(i));
     }
 
-    protected void notifyExclude() { scheduleAll(onExclude); }
-    protected void notifyInsert() { scheduleAll(onInsert); }
-    protected void notifyIChange() { scheduleAll(onIChange); }
+    protected void notifyExclude() {
+        scheduleAll(onExclude);
+    }
+
+    protected void notifyInsert() {
+        scheduleAll(onInsert);
+    }
+
+    protected void notifyIChange() {
+        scheduleAll(onIChange);
+    }
 
     @Override
-    public Solver getSolver() { return cp; }
+    public Solver getSolver() {
+        return cp;
+    }
 
     @Override
     public int size() {
@@ -52,59 +73,83 @@ public class ISVImpl implements InsertionSequenceVar {
     }
 
     @Override
-    public int domainSize()  {
+    public int domainSize() {
         return n;
     }
 
     @Override
-    public boolean isBound() { return dom.isBound(); }
+    public boolean isBound() {
+        return dom.isBound();
+    }
 
     @Override
-    public boolean isMember(int e)  { return dom.isMember(e); }
+    public boolean isMember(int e) {
+        return dom.isMember(e);
+    }
 
     @Override
-    public String allMembers()  { return dom.allMembers(); }
+    public String allMembers() {
+        return dom.allMembers();
+    }
 
     @Override
-    public String allCurrentInserts()  { return dom.allCurrentInserts(); }
+    public String allCurrentInserts() {
+        return dom.allCurrentInserts();
+    }
 
     @Override
-    public String allInserts()  { return dom.allInserts(); }
+    public String allInserts() {
+        return dom.allInserts();
+    }
 
     @Override
-    public List<Integer> getInserts(int e) { return dom.getInserts(e); }
+    public List<Integer> getInserts(int e) {
+        return dom.getInserts(e);
+    }
 
 
     /**
      * return the current successor of e in S.
      */
     @Override
-    public int nextMember(int e)  { return dom.nextMember(e); }
+    public int nextMember(int e) {
+        return dom.nextMember(e);
+    }
+
     @Override
-    public int prevMember(int e) { return dom.prevMember(e); }
+    public int prevMember(int e) {
+        return dom.prevMember(e);
+    }
 
     /**
      * returns true iif (e, p) is in I.
      */
     @Override
-    public boolean canInsert(int e, int p)  { return dom.canInsert(e, p); }
+    public boolean canInsert(int e, int p) {
+        return dom.canInsert(e, p);
+    }
 
     /**
      * remove (e, p) from I.
      */
     @Override
-    public void remInsert(int e, int p)  { dom.remInsert(e, p); notifyIChange(); }
+    public void remInsert(int e, int p) {
+        dom.remInsert(e, p);
+        notifyIChange();
+    }
 
     @Override
     public void insert(int e, int p) {
         dom.insert(e, p);
-        notifyInsert(); notifyIChange();
+        notifyInsert();
+        notifyIChange();
     }
 
     @Override
     public void exclude(int e) {
         dom.exclude(e);
-        notifyExclude(); notifyIChange();
+        notifyExclude();
+        notifyIChange();
     }
 
     @Override
@@ -113,11 +158,22 @@ public class ISVImpl implements InsertionSequenceVar {
     }
 
     @Override
-    public int getStatus(int e) { return dom.getStatus(e); }
+    public boolean isRequired(int e) {
+        return dom.isRequired(e);
+    }
 
     @Override
-    public boolean isEmpty() { return dom.isEmpty(); }
+    public boolean isExcluded(int e) {
+        return dom.isExcluded(e);
+    }
 
     @Override
-    public void resetDomain() { dom = new ISVDomain(cp.getStateManager(), n); }
+    public boolean isEmpty() {
+        return dom.isEmpty();
+    }
+
+    @Override
+    public void resetDomain() {
+        dom = new ISVDomain(cp.getStateManager(), n);
+    }
 }

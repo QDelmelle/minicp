@@ -2,6 +2,10 @@ package minicp.examples;
 
 import java.util.*;
 
+/**
+ * @author Quentin Delmelle qdelmelle@gmail.com
+ */
+
 class DARPDataModel {
     static class DARPStop {
         double x;
@@ -66,7 +70,8 @@ class DARPDataModel {
         int timeHorizon;
 
         public DARPInstance(String name, int nVehicles, int vCapacity, int maxRideTime, int maxDuration) {
-            this.name = name;
+            String[] tmp = name.split("/");
+            this.name = tmp[tmp.length - 1].replace(".txt", "");
             this.nVehicles = nVehicles;
             this.vCapacity = vCapacity;
             this.maxRideTime = maxRideTime;
@@ -117,8 +122,46 @@ class DARPDataModel {
         }
     }
 
+    static class DARPSolution {
+        public int fails;
+        double cost;
+        DARPPath[] paths;
+
+        public DARPSolution(DARPPath[] paths, double cost, int fails) {
+            this.paths = paths;
+            this.cost = cost;
+            this.fails = fails;
+        }
+
+        public boolean isEmpty() {
+            return paths[0].len == 0;
+        }
+
+        public String toString() {
+            String ret = "";
+            for (int v = 0; v < paths.length; v++) {
+                ret += "vehicle " + v + ": ";
+                for (DARPStep s : paths[v].steps) {
+                    ret += s.stop + "[" + s.starttime + ", " + s.endtime + "], ";
+                }
+                ret += "\n";
+            }
+            ret += "cost = " + cost;
+            return ret;
+        }
+
+        public boolean equals(DARPSolution s) {
+            if (cost != s.cost) return false;
+            for (int v = 0; v < paths.length; v++) {
+                if (!paths[v].equals(s.paths[v])) return false;
+            }
+            return true;
+        }
+    }
+
     /**
      * an instance where vehicles don't necessarily start at the depot, each one has a route in progress.
+     * WORK IN PROGRESS
      */
     static class DynamicDARPInstance extends DARPInstance {
         DARPPath[] paths; // the sites each vehicle has already visited, the last one being its current objective.
@@ -171,33 +214,6 @@ class DARPDataModel {
         public void addStep(DARPStep s) {
             steps.add(s);
             len++;
-        }
-    }
-
-    static class DARPSolution {
-        public double fails;
-        double cost;
-        DARPPath[] paths;
-
-        public DARPSolution(DARPPath[] paths, double cost, double fails) {
-            this.paths = paths; this.cost = cost; this.fails = fails;
-        }
-
-        public boolean isEmpty() {
-            return paths[0].len == 0;
-        }
-
-        public String toString() {
-            String ret = "";
-            for (int v = 0; v < paths.length; v++) {
-                ret += "vehicle " + v + ": ";
-                for (DARPStep s : paths[v].steps) {
-                    ret += s.stop + "["+s.starttime+", "+s.endtime+"], ";
-                }
-                ret += "\n";
-            }
-            ret += "cost = "+cost;
-            return ret;
         }
     }
 }

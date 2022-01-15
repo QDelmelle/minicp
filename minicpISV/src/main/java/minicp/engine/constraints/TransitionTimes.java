@@ -8,6 +8,10 @@ import minicp.util.exception.InconsistencyException;
 
 import java.util.List;
 
+/**
+ * @author Quentin Delmelle qdelmelle@gmail.com
+ */
+
 public class TransitionTimes extends AbstractConstraint {
     private InsertionSequenceVar V;
     private IntVar[] start;
@@ -50,9 +54,12 @@ public class TransitionTimes extends AbstractConstraint {
                 List<Integer> inserts = V.getInserts(e);
                 for (int p : inserts) {
                     if (V.isMember(p)) {
-                        if (p < n && start[p].min() + dur[p] + tt[p][e] > start[e].max()) V.remInsert(e, p);
+                        int x = p == n ? Integer.MIN_VALUE : start[p].min() + dur[p] + tt[p][e];
+                        int minE = Math.max(x, start[e].min());
                         int s = V.nextMember(p);
-                        if (s < n && start[e].min() + dur[e] + tt[e][s] > start[s].max()) V.remInsert(e, p);
+                        int y = s == n ? Integer.MAX_VALUE : start[s].max() - dur[e] - tt[e][s];
+                        int maxE = Math.min(y, start[e].max());
+                        if (minE > maxE) V.remInsert(e, p);
                     }
                 }
             }

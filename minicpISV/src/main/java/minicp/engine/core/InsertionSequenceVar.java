@@ -8,11 +8,13 @@ import java.util.List;
 /**
  * A variable representing a sequence of integers.
  * Its domain is represented by <S, I, P, E, R>
- *     S is the current sequence.
- *     I is the set of possible insertions (e, p) == (insert e after p in S).
- *     P is the set of optional members.
- *     E is the set of excluded members.
- *     R is the set of mandatory members.
+ * S is the current sequence.
+ * I is the set of possible insertions (e, p) == (insert e after p in S).
+ * P is the set of optional members.
+ * E is the set of excluded members.
+ * R is the set of mandatory members.
+ *
+ * @author Quentin Delmelle qdelmelle@gmail.com
  */
 
 public interface InsertionSequenceVar {
@@ -103,9 +105,14 @@ public interface InsertionSequenceVar {
     void require(int e);
 
     /**
-     * return 0 if e is required (R), 2 if e is excluded (E) and 1 otherwise (P)
+     * return true if e is in R, false otherwise
      */
-    int getStatus(int e);
+    boolean isRequired(int e);
+
+    /**
+     * return true if e is in E, false otherwise
+     */
+    boolean isExcluded(int e);
 
     /**
      * return true iif the sequence is empty.

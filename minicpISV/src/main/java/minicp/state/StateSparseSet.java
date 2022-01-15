@@ -56,29 +56,6 @@ public class StateSparseSet {
         }
     }
 
-    //************************* ISV
-
-    /**
-     * exchange the values at indexes index1 and index2.
-     */
-    public void exchangeFromIndex(int index1, int index2) {
-        int i1 = index1;
-        int i2 = index2;
-        int v1 = values[i1];
-        int v2 = values[i2];
-        assert (checkVal(v1));
-        assert (checkVal(v2));
-        values[i1] = v2;
-        values[i2] = v1;
-        indexes[v1] = i2;
-        indexes[v2] = i1;
-    }
-
-    public int get(int index) { return values[index]; }
-
-    //************************* ISV
-
-
     private void exchangePositions(int val1, int val2) {
         assert (checkVal(val1));
         assert (checkVal(val2));

@@ -5,11 +5,22 @@ import minicp.engine.core.InsertionSequenceVar;
 import minicp.engine.core.Solver;
 import minicp.util.exception.InconsistencyException;
 
+/**
+ * @author Quentin Delmelle qdelmelle@gmail.com
+ */
+
 public class Precedence extends AbstractConstraint {
     int[] O;
     int[] reverseO;
     InsertionSequenceVar V;
 
+    /**
+     *
+     * @param V
+     * @param O
+     *
+     * ensures that the elements of V appear in the same order as they do in O, if they appear at all.
+     */
     public Precedence(InsertionSequenceVar V, int[] O) {
         super(V.getSolver());
         this.V = V;

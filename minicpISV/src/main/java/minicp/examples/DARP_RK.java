@@ -9,6 +9,7 @@ import minicp.examples.DARPParser.*;
 import minicp.examples.DARPDataModel.*;
 import minicp.search.DFSearch;
 import minicp.search.SearchStatistics;
+import minicp.search.StopSearchException;
 import minicp.state.*;
 import minicp.util.Procedure;
 import minicp.util.exception.InconsistencyException;
@@ -20,7 +21,9 @@ import static minicp.cp.BranchingScheme.*;
 
 /**
  * @author Quentin Delmelle qdelmelle@gmail.com
- * transtlated from the scala work of
+ *
+ * A DARP solver implementing LNS-FFPA.
+ * Based on a scala solver by
  * Roger Kameugne rkameugne@gmail.com
  * and Charles Thomas cftmthomas@gmail.com
  */
@@ -42,9 +45,6 @@ class DARPModelVH {
     static int maxTime = 30;
     static long remainTime = maxTime * 1000L;
     static int SCALING = 100;
-
-//    solPath: Option[String],
-//    logPath: Option[String],
 
     // utility parameters
     static boolean firstSolOnly = false;
@@ -84,7 +84,23 @@ class DARPModelVH {
     static HashMap<Integer, HashMap<Integer, HashMap<Integer, Integer>>>[] insertionObjChange;
     static StateSparseSet customersLeft;
 
-    public static DARPSolution run(DARPInstance I, int runtime, int a, int b) {
+    public static DARPSolution run(DARPInstance Instance) {
+        return run(Instance, 30, 1, 0, false, false);
+    }
+
+    public static DARPSolution run(DARPInstance Instance, int runtime) {
+        return run(Instance, runtime, 1, 0, false, false);
+    }
+
+    public static DARPSolution run(DARPInstance Instance, boolean brute_force) {
+        return run(Instance, 3600, 1, 0, false, true);
+    }
+
+    public static DARPSolution run(DARPInstance Instance, int runtime, int a, int b, boolean FirstSolOnly) {
+        return run(Instance, runtime, a, b, FirstSolOnly, false);
+    }
+
+    public static DARPSolution run(DARPInstance Instance, int runtime, int a, int b, boolean FirstSolOnly, boolean brute_force) {
         bestSolution = null;
         bestSolutionObjective = Integer.MAX_VALUE;
         currentSolution = null;
@@ -94,7 +110,8 @@ class DARPModelVH {
         remainTime = maxTime * 1000L;
         alpha = a;
         beta = b;
-        instance = I;
+        instance = Instance;
+        firstSolOnly = FirstSolOnly;
         cp = makeSolver();
         System.out.println("firstSolOnly= " + firstSolOnly);
 
@@ -144,11 +161,13 @@ class DARPModelVH {
         // post constraints
         postConstraints();
 
-        // search algorithm
+
         search = makeDfs(cp, () -> {
+            // TreeSearch
             printDebug("" + exportSol(0));
             if (customersLeft.isEmpty()) return EMPTY;
             else {
+                computeInsertionPoints();
                 int request = getUnassignedRequest();
                 int[][] points = getInsertionPoints(request);
                 //printInsertionPoints(points);
@@ -164,6 +183,11 @@ class DARPModelVH {
 
         // On solution
         search.onSolution(() -> {
+            DARPSolution sol = exportSol(0);
+            if (!DARPtest.isSolValid(instance, sol)) {
+                System.out.println("illegal sol := " + sol);
+                throw new StopSearchException();
+            }
             double rand = Math.random();
             int obj = getDistanceObjective();
             if (obj < currentSolutionObjective || rand < d) {
@@ -177,47 +201,35 @@ class DARPModelVH {
                 }
             }
         });
-        boolean solFound = false;
 
-        //search.solve(); System.out.println("best obj = "+bestSolutionObjective);
-        // find initial solution
-        while (!solFound && remainTime > 0) {
-            long t1 = System.currentTimeMillis();
-            SearchStatistics stats = search.solve(statistics -> statistics.numberOfSolutions() == 1);
-            // + (int)Math.round(remainTime / 1000.0)); ??
-            if (stats.numberOfSolutions() == 1) solFound = true;
-            else System.out.println("restart! " + remainTime);
-            //System.out.println(stats);
-            //solFound = true; // if we don't want restarts
-            remainTime -= System.currentTimeMillis() - t1;
-            totalNumFails += stats.numberOfFailures();
+        if (brute_force) {
+            SearchStatistics stats = search.solve();
+            System.out.println("# of failures: " + stats.numberOfFailures());
+            return bestSolution;
         }
 
-        if (!firstSolOnly) lns();
-        System.out.println("total failures: " + totalNumFails);
-        return bestSolution;
-
-        // write sol in a file
-        //  val pw = new PrintWriter(new File("data/DARP/Cordeau2003/" + name + "Solution.txt"))
-        //  pw.write(name + " " + bestSolutionObjective/100.0 +"\n")
-        //  for(i <- numVarsRange){
-        //    pw.write(bestSolution.get.succ(i) + " ")
-        //    pw.write(bestSolution.get.pred(i) + " ")
-        //    pw.write(bestSolution.get.minServingTime(i) + " ")
-        //    pw.write(bestSolution.get.maxServingTime(i) + " ")
-        //    pw.write(bestSolution.get.servingVehicle(i)+"\n")
-        //  }
-        //  pw.close
+        long t1 = System.currentTimeMillis();
+        SearchStatistics stats = search.solve(statistics -> statistics.numberOfSolutions() == 1); // find initial solution
+        remainTime -= System.currentTimeMillis() - t1;
+        totalNumFails += stats.numberOfFailures();
+        if (stats.numberOfSolutions() == 1) {
+            if (!firstSolOnly) lns();
+            System.out.println("total failures: " + totalNumFails);
+            return bestSolution;
+        }
+        return null;
     }
 
-    // lns
+    // MinimizeRoutingCost
     static void lns() {
         int i = 2;
         while (remainTime > 0 && i <= maxSize - range) {
+            if (i == maxSize - range) i = 2; // reset loop if there is time left
             int j = 0;
             int finalI = i;
             int finalJ = j;
             while (remainTime > 0 && j <= range) {
+                //System.err.print(i + ", ");
                 int k = 1;
                 while (remainTime > 0 && k <= numIter) {
                     long t1 = System.currentTimeMillis();
@@ -258,7 +270,7 @@ class DARPModelVH {
         }
     }
 
-    static int getUnassignedRequest() {
+    static void computeInsertionPoints() {
         int[] cl = customersLeft.toArray();
         for (int r : cl) {
             insertionObjChange[r] = new HashMap<Integer, HashMap<Integer, HashMap<Integer, Integer>>>();
@@ -267,9 +279,13 @@ class DARPModelVH {
                 if (!insertionObjChange[r].containsKey(v)) servingVehicle[r].remove(v);
             }
         }
+    }
+
+    static int getUnassignedRequest() {
         int minVehicles = numVehicles + 1;
 
         // step 1: minimize number of routes
+        int[] cl = customersLeft.toArray();
         for (int r : cl) {
             minVehicles = Math.min(minVehicles, servingVehicle[r].size());
         }
@@ -540,15 +556,6 @@ class DARPModelVH {
             }
         }
         return length;
-    }
-
-    static boolean isPositive(StateInt[] array) {
-        for (int i = 0; i < array.length; i++) {
-            if (array[i].value() < 0) {
-                return false;
-            }
-        }
-        return true;
     }
 
     static int getVehicleOfDepot(int i) {

@@ -1,23 +1,31 @@
 package minicp.examples;
 
-import minicp.engine.constraints.*;
-import minicp.engine.core.*;
-
-import minicp.examples.DARPParser.*;
+import minicp.engine.constraints.First;
+import minicp.engine.constraints.Last;
+import minicp.engine.constraints.TransitionTimes;
+import minicp.engine.core.InsertionSequenceVar;
+import minicp.engine.core.IntVar;
+import minicp.engine.core.IntVarViewOffset;
+import minicp.engine.core.Solver;
 import minicp.examples.DARPDataModel.*;
 import minicp.search.DFSearch;
 import minicp.search.SearchStatistics;
-import minicp.state.*;
+import minicp.search.StopSearchException;
+import minicp.state.StateInt;
+import minicp.state.StateManager;
+import minicp.state.StateSparseSet;
 import minicp.util.Procedure;
 import minicp.util.exception.InconsistencyException;
 
 import java.util.*;
 
+import static minicp.cp.BranchingScheme.EMPTY;
+import static minicp.cp.BranchingScheme.branch;
 import static minicp.cp.Factory.*;
-import static minicp.cp.BranchingScheme.*;
 
 /**
  * @author Quentin Delmelle qdelmelle@gmail.com
+ * A DARP solver implementing LNS-FFPA with Insertion sequence variables
  */
 
 class DARP_LNSFFPA_Seqvar {
@@ -75,7 +83,22 @@ class DARP_LNSFFPA_Seqvar {
     static HashMap<Integer, HashMap<Integer, HashMap<Integer, Integer>>>[] insertionObjChange;
     static StateSparseSet customersLeft;
 
-    public static DARPSolution run(DARPInstance I, int runtime, int a, int b) {
+    // utils
+    static String convergencePath;
+
+    public static DARPSolution run(DARPInstance Instance) {
+        return run(Instance, 30, 1, 0, false);
+    }
+
+    public static DARPSolution run(DARPInstance Instance, int runtime) {
+        return run(Instance, runtime, 1, 0, false);
+    }
+
+    public static DARPSolution run(DARPInstance Instance, int runtime, int a, int b) {
+        return run(Instance, runtime, a, b, false);
+    }
+
+    public static DARPSolution run(DARPInstance Instance, int runtime, int a, int b, boolean FirstSolOnly) {
         bestSolution = null;
         bestSolutionObjective = Integer.MAX_VALUE;
         currentSolution = null;
@@ -85,7 +108,9 @@ class DARP_LNSFFPA_Seqvar {
         remainTime = maxTime * 1000L;
         alpha = a;
         beta = b;
-        instance = I;
+        instance = Instance;
+        convergencePath = "D:/Documents/UNIF2020-21/THESE/PAPER/convergence/" + instance.name; // /!\ path should be replaced
+        firstSolOnly = FirstSolOnly;
         cp = makeSolver();
 
         System.out.println("firstSolOnly= " + firstSolOnly);
@@ -136,9 +161,11 @@ class DARP_LNSFFPA_Seqvar {
 
         // search algorithm
         search = makeDfs(cp, () -> {
-            printDebug("" + exportSol(0));
+            // TreeSearch
+            //printDebug("" + exportSol(0));
             if (customersLeft.isEmpty()) return EMPTY;
             else {
+                computeInsertionPoints();
                 int request = getUnassignedRequest();
                 int[][] points = getInsertionPoints(request);
                 //printInsertionPoints(points);
@@ -148,12 +175,20 @@ class DARP_LNSFFPA_Seqvar {
                     int[] p = points[i];
                     branches[i] = () -> branchRequestPoint(request, p);
                 }
+                if (branches.length == 0) {
+                    //System.out.println("no branch!");
+                    throw new InconsistencyException();
+                }
                 return branch(branches);
             }
         });
-
         // On solution
         search.onSolution(() -> {
+            DARPSolution sol = exportSol(0);
+            if (!DARPtest.isSolValid(instance, sol)) {
+                System.out.println("illegal sol := " + sol);
+                throw new StopSearchException();
+            }
             double rand = Math.random();
             int obj = getDistanceObjective();
             if (obj < currentSolutionObjective || rand < d) {
@@ -164,50 +199,39 @@ class DARP_LNSFFPA_Seqvar {
                     bestSolutionObjective = currentSolutionObjective;
                     System.out.println("new best solution found:= " + bestSolutionObjective / (double) SCALING);
                     System.out.println("remainingTime := " + remainTime);
+                    //experiment 2
+                    //DARPtest.writeToFile(maxTime - (double) remainTime / 1000 + " " + (double) bestSolutionObjective / SCALING + "\n", convergencePath, true);
                 }
             }
         });
-        boolean solFound = false;
-
+        // brute force
         //search.solve(); System.out.println("best obj = "+bestSolutionObjective);
-        // find initial solution
-        while (!solFound && remainTime > 0) {
-            long t1 = System.currentTimeMillis();
-            SearchStatistics stats = search.solve(statistics -> statistics.numberOfSolutions() == 1);
-            // + (int)Math.round(remainTime / 1000.0)); ??
-            if (stats.numberOfSolutions() == 1) solFound = true;
-            else System.out.println("restart! " + remainTime);
-            //System.out.println(stats);
-            //solFound = true; // if we don't want restarts
-            remainTime -= System.currentTimeMillis() - t1;
-            totalNumFails += stats.numberOfFailures();
+
+        //experiment 2
+        //DARPtest.writeToFile("", convergencePath, false);
+
+        long t1 = System.currentTimeMillis();
+        SearchStatistics stats = search.solve(statistics -> statistics.numberOfSolutions() == 1); // find initial solution
+        remainTime -= System.currentTimeMillis() - t1;
+        totalNumFails += stats.numberOfFailures();
+        if (stats.numberOfSolutions() == 1) {
+            if (!firstSolOnly) lns();
+            System.out.println("total failures: " + totalNumFails);
+            return bestSolution;
         }
-
-        if (!firstSolOnly) lns();
-        System.out.println("total failures: " + totalNumFails);
-        return bestSolution;
-
-        // write sol in a file
-        //  val pw = new PrintWriter(new File("data/DARP/Cordeau2003/" + name + "Solution.txt"))
-        //  pw.write(name + " " + bestSolutionObjective/100.0 +"\n")
-        //  for(i <- numVarsRange){
-        //    pw.write(bestSolution.get.succ(i) + " ")
-        //    pw.write(bestSolution.get.pred(i) + " ")
-        //    pw.write(bestSolution.get.minServingTime(i) + " ")
-        //    pw.write(bestSolution.get.maxServingTime(i) + " ")
-        //    pw.write(bestSolution.get.servingVehicle(i)+"\n")
-        //  }
-        //  pw.close
+        return null;
     }
 
-    // lns
+    // MinimizeRoutingCost
     static void lns() {
         int i = 2;
         while (remainTime > 0 && i <= maxSize - range) {
+            if (i == maxSize - range) i = 2; // reset loop if there is time left
             int j = 0;
             int finalI = i;
             int finalJ = j;
             while (remainTime > 0 && j <= range) {
+                //System.err.print(i + ", ");
                 int k = 1;
                 while (remainTime > 0 && k <= numIter) {
                     long t1 = System.currentTimeMillis();
@@ -219,20 +243,22 @@ class DARP_LNSFFPA_Seqvar {
                     k++;
                     remainTime -= System.currentTimeMillis() - t1;
                     totalNumFails += stats.numberOfFailures();
-                    if (debug) return;
+                    //if (debug) return;
                 }
                 j++;
             }
             i++;
         }
+        System.err.println(remainTime);
     }
 
     static void relax(int nRelax) {
+        printDebug("RELAX ************************************************************************************************************************* RELAX");
         Set<Integer> relaxedCustomers = selectRelaxedCustomers(nRelax);
-        printDebug("relaxed: " + relaxedCustomers);
         for (int r = 0; r < numRequests; r++) {
             if (!relaxedCustomers.contains(r)) customersLeft.remove(r);
         }
+        printDebug("relaxed: " + customersLeft.toString());
         for (int v = 0; v < numVehicles; v++) {
             int prev = -1;
             for (DARPStep s : currentSolution.paths[v].steps) {
@@ -240,6 +266,7 @@ class DARP_LNSFFPA_Seqvar {
                 int r = getCorrespondingRequest(current);
                 if (!relaxedCustomers.contains(r)) {
                     if (route[v].canInsert(current, prev)) {
+                        printDebug("inserting " + current + " after " + prev);
                         route[v].insert(current, prev);
                         equal(servingVehicle[current], v);
                     }
@@ -250,7 +277,7 @@ class DARP_LNSFFPA_Seqvar {
         }
     }
 
-    static int getUnassignedRequest() {
+    static void computeInsertionPoints() {
         int[] cl = customersLeft.toArray();
         for (int r : cl) {
             insertionObjChange[r] = new HashMap<Integer, HashMap<Integer, HashMap<Integer, Integer>>>();
@@ -259,9 +286,13 @@ class DARP_LNSFFPA_Seqvar {
                 if (!insertionObjChange[r].containsKey(v)) servingVehicle[r].remove(v);
             }
         }
+    }
+
+    static int getUnassignedRequest() {
         int minVehicles = numVehicles + 1;
 
         // step 1: minimize number of routes
+        int[] cl = customersLeft.toArray();
         for (int r : cl) {
             minVehicles = Math.min(minVehicles, servingVehicle[r].size());
         }
@@ -349,6 +380,44 @@ class DARP_LNSFFPA_Seqvar {
     }
 
     // finds all possible insertions of request in route v and compute their cost.
+    static void setInsertionCost(int request, int v) {
+        int pickup = request, drop = request + numRequests;
+        int begin = getBeginDepot(v);
+        int end = getEndDepot(v);
+        int pPred = begin;
+        while (pPred != end) {
+            int pSucc = route[v].nextMember(pPred);
+            int pMinServingTime = Math.max(getArrivalTime(pPred, pickup).min(), servingTime[pickup].min());
+            if (route[v].canInsert(pickup, pPred) && capacityLeftInRoute[pPred].value() >= load[pickup]) {
+
+                // drop inserted just after pickup
+                int dMinServingTime = Math.max(pMinServingTime + servingDuration[pickup] + dist[pickup][drop], servingTime[drop].min());
+                int dMaxServingTime = Math.min(servingTime[pSucc].max() - dist[pSucc][drop] - servingDuration[drop], servingTime[drop].max());
+                if (dMaxServingTime >= dMinServingTime) {
+                    int slack = dMaxServingTime - servingTime[pPred].min() - dist[pPred][pickup] - servingDuration[pPred] - dist[pickup][pSucc] - servingDuration[pickup]
+                            + servingTime[pSucc].max() - pMinServingTime - dist[pickup][drop] - servingDuration[pickup] - dist[drop][pSucc] - servingDuration[drop];
+                    int costIncrease = dist[pPred][pickup] + dist[pickup][drop] + dist[drop][pSucc] - dist[pPred][pSucc];
+                    addToInsertionObjChange(request, v, pPred, pickup, alpha * costIncrease - beta * slack);
+                }
+
+                int dPred = pSucc; // drop inserted further
+                while (dPred != end && capacityLeftInRoute[dPred].value() >= load[pickup]) {
+                    int dSucc = route[v].nextMember(dPred);
+                    if (route[v].canInsert(drop, dPred)) {
+                        int slack = servingTime[pSucc].max() - servingTime[pPred].min() - dist[pPred][pickup] - servingDuration[pPred] - dist[pickup][pSucc] - servingDuration[pickup]
+                                + servingTime[dSucc].max() - servingTime[dPred].min() - dist[dPred][drop] - servingDuration[dPred] - dist[drop][dSucc] - servingDuration[drop];
+                        int costIncrease = dist[pPred][pickup] + dist[pickup][pSucc] - dist[pPred][pSucc]
+                                + dist[dPred][drop] + dist[drop][dSucc] - dist[dPred][dSucc];
+                        addToInsertionObjChange(request, v, pPred, dPred, alpha * costIncrease - beta * slack);
+                    }
+                    dPred = dSucc;
+                }
+            }
+            pPred = pSucc;
+        }
+    }
+
+    // finds all possible insertions of request in route v and compute their cost.
     // correct mais trop lent
     static void setInsertionCost2(int request, int v) {
         StateManager sm = cp.getStateManager();
@@ -384,47 +453,6 @@ class DARP_LNSFFPA_Seqvar {
                 }
                 sm.restoreState();
             }
-        }
-    }
-
-    // finds all possible insertions of request in route v and compute their cost.
-    static void setInsertionCost(int request, int v) {
-        int pickup = request, drop = request + numRequests;
-        int begin = getBeginDepot(v);
-        int end = getEndDepot(v);
-        int pPred = begin;
-        while (pPred != end) {
-            int pSucc = route[v].nextMember(pPred);
-            int pMinServingTime = Math.max(getArrivalTime(pPred, pickup).min(), servingTime[pickup].min());
-            int pMaxServingTime = Math.min(servingTime[pSucc].max() - dist[pickup][pSucc] - servingDuration[pickup], servingTime[pickup].max());
-            if (pMaxServingTime >= pMinServingTime && capacityLeftInRoute[pPred].value() >= load[pickup]) {
-
-                // drop inserted just after pickup
-                int dMinServingTime = Math.max(pMinServingTime + servingDuration[pickup] + dist[pickup][drop], servingTime[drop].min());
-                int dMaxServingTime = Math.min(servingTime[pSucc].max() - dist[pSucc][drop] - servingDuration[drop], servingTime[drop].max());
-                if (dMaxServingTime >= dMinServingTime) {
-                    int slack = dMaxServingTime - servingTime[pPred].min() - dist[pPred][pickup] - servingDuration[pPred] - dist[pickup][pSucc] - servingDuration[pickup]
-                            + servingTime[pSucc].max() - pMinServingTime - dist[pickup][drop] - servingDuration[pickup] - dist[drop][pSucc] - servingDuration[drop];
-                    int costIncrease = dist[pPred][pickup] + dist[pickup][drop] + dist[drop][pSucc] - dist[pPred][pSucc];
-                    addToInsertionObjChange(request, v, pPred, pickup, alpha * costIncrease - beta * slack);
-                }
-
-                int dPred = pSucc; // drop inserted further
-                while (dPred != end && capacityLeftInRoute[dPred].value() >= load[pickup]) {
-                    int dSucc = route[v].nextMember(dPred);
-                    dMinServingTime = Math.max(getArrivalTime(dPred, drop).min(), servingTime[drop].min());
-                    dMaxServingTime = Math.min(servingTime[dSucc].max() - dist[dSucc][drop] - servingDuration[drop], servingTime[drop].max());
-                    if (dMaxServingTime >= dMinServingTime) {
-                        int slack = servingTime[pSucc].max() - servingTime[pPred].min() - dist[pPred][pickup] - servingDuration[pPred] - dist[pickup][pSucc] - servingDuration[pickup]
-                                + servingTime[dSucc].max() - servingTime[dPred].min() - dist[dPred][drop] - servingDuration[dPred] - dist[drop][dSucc] - servingDuration[drop];
-                        int costIncrease = dist[pPred][pickup] + dist[pickup][pSucc] - dist[pPred][pSucc]
-                                + dist[dPred][drop] + dist[drop][dSucc] - dist[dPred][dSucc];
-                        addToInsertionObjChange(request, v, pPred, dPred, alpha * costIncrease - beta * slack);
-                    }
-                    dPred = dSucc;
-                }
-            }
-            pPred = pSucc;
         }
     }
 
@@ -555,15 +583,6 @@ class DARP_LNSFFPA_Seqvar {
             i = route[v].nextMember(i);
         }
         return length;
-    }
-
-    static boolean isPositive(StateInt[] array) {
-        for (int i = 0; i < array.length; i++) {
-            if (array[i].value() < 0) {
-                return false;
-            }
-        }
-        return true;
     }
 
     // helper methods
